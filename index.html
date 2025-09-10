@@ -546,27 +546,24 @@
                     clearMsg();
                     try {
                         const d = dateInput.value || today();
-                        // Try public endpoint first; if private/not found, fallback to user list and pick exact date
+                        // Use private/self endpoint first
                         let ok = false;
-                        try {
-                          const pub = await apiGet({ action: 'getDiaryEntry', username: user.username, date: d });
-                          if (pub.success && pub.entry) {
-                            titleInput.value = pub.entry.title || '';
-                            contentInput.value = pub.entry.content || '';
-                            ok = true;
-                          }
-                        } catch (e) {}
-                        if (!ok) {
-                          const list = await apiGet({ action: 'getUserDiaryEntries', userId: user.id, month: d.slice(0,7) });
-                          if (list.success && Array.isArray(list.entries)) {
-                            const found = list.entries.find(e => e.date === d);
-                            if (found) {
-                              titleInput.value = found.title || '';
-                              contentInput.value = found.content || '';
-                              privacySelect.value = String(!!found.isPrivate);
+                        const own = await apiGet({ action: 'getUserDiaryEntry', userId: user.id, date: d });
+                        if (own.success && own.entry) {
+                          titleInput.value = own.entry.title || '';
+                          contentInput.value = own.entry.content || '';
+                          privacySelect.value = String(!!own.entry.isPrivate);
+                          ok = true;
+                        } else {
+                          // Fallback to public view if this date is public and username/date requested directly
+                          try {
+                            const pub = await apiGet({ action: 'getDiaryEntry', username: user.username, date: d });
+                            if (pub.success && pub.entry) {
+                              titleInput.value = pub.entry.title || '';
+                              contentInput.value = pub.entry.content || '';
                               ok = true;
                             }
-                          }
+                          } catch (e) {}
                         }
                         if (ok) setMsg('Loaded entry for ' + d, true);
                         else { titleInput.value=''; contentInput.value=''; setMsg('No entry for ' + d, false); }
