@@ -283,6 +283,7 @@
                 const last = segments.slice(-2);
                 const maybeUser = last.length === 2 ? last[0] : null;
                 const maybeDate = last.length === 2 ? last[1] : null;
+                const maybeUserOnly = segments.length === 1 ? segments[0] : null;
 
                 const hash = window.location.hash || '';
                 if (hash.startsWith('#public')) {
@@ -291,6 +292,11 @@
 
                 if (maybeUser && /^\d{4}-\d{2}-\d{2}$/.test(maybeDate)) {
                     return mount.appendChild(PublicEntry(maybeUser, maybeDate));
+                }
+
+                // Route: /:username → public calendar for that user
+                if (maybeUserOnly && !/^\d{4}-\d{2}-\d{2}$/.test(maybeUserOnly)) {
+                    return mount.appendChild(PublicUser(maybeUserOnly));
                 }
 
                 if (auth.user) {
@@ -694,6 +700,94 @@
                     } catch (e) { node.querySelector('#pub-list').textContent = e.message; }
                 })();
 
+                return node;
+            }
+
+            function PublicUser(username) {
+                const node = el(`
+      <div class="card">
+        <h3>Public calendar</h3>
+        <div class="helper">${username}</div>
+        <div class="spacer"></div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <button id="cal-prev" class="ghost">Prev</button>
+          <div id="cal-label" class="badge"></div>
+          <button id="cal-next" class="ghost">Next</button>
+        </div>
+        <div id="calendar"></div>
+      </div>
+    `);
+
+                let calYear = new Date().getFullYear();
+                let calMonth = new Date().getMonth();
+                const calLabel = node.querySelector('#cal-label');
+                const calPrev = node.querySelector('#cal-prev');
+                const calNext = node.querySelector('#cal-next');
+                const calHost = node.querySelector('#calendar');
+
+                let publicEntries = null; // cache
+
+                calPrev.addEventListener('click', () => { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); });
+                calNext.addEventListener('click', () => { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } renderCalendar(); });
+
+                async function ensureEntries() {
+                    if (publicEntries) return publicEntries;
+                    try {
+                        const res = await apiGet({ action: 'getPublicDiaryEntries', username });
+                        if (res.success && Array.isArray(res.entries)) {
+                            publicEntries = res.entries;
+                        } else {
+                            publicEntries = [];
+                        }
+                    } catch (e) {
+                        publicEntries = [];
+                    }
+                    return publicEntries;
+                }
+
+                async function renderCalendar() {
+                    const first = new Date(calYear, calMonth, 1);
+                    const monthStr = String(calYear) + '-' + String(calMonth + 1).padStart(2, '0');
+                    calLabel.textContent = first.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+                    calHost.innerHTML = '';
+                    const grid = document.createElement('div');
+                    grid.style.display = 'grid';
+                    grid.style.gridTemplateColumns = 'repeat(7,1fr)';
+                    grid.style.gap = '8px';
+                    const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                    weekdays.forEach(d => { const h = document.createElement('div'); h.className = 'helper'; h.textContent = d; grid.appendChild(h); });
+                    const startPad = first.getDay();
+                    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+                    for (let i = 0; i < startPad; i++) { const pad = document.createElement('div'); grid.appendChild(pad); }
+
+                    const entries = await ensureEntries();
+                    const entriesByDate = {};
+                    for (const e of entries) { entriesByDate[e.date] = e; }
+
+                    for (let day = 1; day <= daysInMonth; day++) {
+                        const dstr = String(calYear) + '-' + String(calMonth + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+                        const cell = document.createElement('div');
+                        cell.style.border = '1px solid var(--border)';
+                        cell.style.borderRadius = '10px';
+                        cell.style.padding = '8px';
+                        cell.style.minHeight = '72px';
+                        cell.style.background = 'var(--input)';
+                        const head = document.createElement('div'); head.className = 'helper'; head.textContent = day; cell.appendChild(head);
+                        const entry = entriesByDate[dstr];
+                        if (entry) {
+                            const a = document.createElement('a'); a.className = 'link'; a.href = `${basePath()}/${encodeURIComponent(username)}/${dstr}`; a.target = '_blank'; a.rel = 'noopener';
+                            a.textContent = (entry.title || 'Untitled');
+                            const p = document.createElement('div'); p.style.marginTop = '6px'; p.appendChild(a); cell.appendChild(p);
+                        } else {
+                            const p = document.createElement('div'); p.className = 'helper'; p.style.marginTop = '6px'; p.textContent = '—'; cell.appendChild(p);
+                        }
+                        cell.addEventListener('click', () => { window.open(`${basePath()}/${encodeURIComponent(username)}/${dstr}`, '_blank'); });
+                        grid.appendChild(cell);
+                    }
+                    calHost.appendChild(grid);
+                }
+
+                renderCalendar();
                 return node;
             }
 
