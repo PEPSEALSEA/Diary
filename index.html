@@ -500,7 +500,10 @@
                     try {
                         const res = await apiGet({ action: 'getUserDiaryEntries', userId: user.id, month: monthStr });
                         if (res.success && Array.isArray(res.entries)) {
-                            for (const e of res.entries) { entriesByDate[e.date] = e; }
+                            for (const e of res.entries) {
+                                const list = entriesByDate[e.date] || (entriesByDate[e.date] = []);
+                                list.push(e);
+                            }
                         }
                     } catch (err) { }
                     for (let day = 1; day <= daysInMonth; day++) {
@@ -512,11 +515,16 @@
                         cell.style.minHeight = '72px';
                         cell.style.background = 'var(--input)';
                         const head = document.createElement('div'); head.className = 'helper'; head.textContent = day; cell.appendChild(head);
-                        const entry = entriesByDate[dstr];
-                        if (entry) {
+                        const list = entriesByDate[dstr] || [];
+                        const count = list.length;
+                        if (count > 0) {
                             const a = document.createElement('a'); a.className = 'link'; a.href = `${basePath()}/${encodeURIComponent(user.username)}/${dstr}`; a.target = '_blank'; a.rel = 'noopener';
-                            a.textContent = (entry.title || 'Untitled') + (entry.isPrivate ? ' (private)' : '');
+                            const first = list[0];
+                            a.textContent = (first.title || 'Untitled') + (first.isPrivate ? ' (private)' : '');
                             const p = document.createElement('div'); p.style.marginTop = '6px'; p.appendChild(a); cell.appendChild(p);
+                            const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = String(count);
+                            badge.style.float = 'right';
+                            head.appendChild(badge);
                         } else {
                             const p = document.createElement('div'); p.className = 'helper'; p.style.marginTop = '6px'; p.textContent = '—'; cell.appendChild(p);
                         }
@@ -689,12 +697,29 @@
                         if (!res.entries || res.entries.length === 0) { wrap.textContent = 'No public entries yet.'; return; }
                         const list = document.createElement('div');
                         res.entries.slice(0, 50).forEach(e => {
+                            const item = document.createElement('div');
+                            item.style.marginBottom = '10px';
+                            item.style.border = '1px solid var(--border)';
+                            item.style.borderRadius = '10px';
+                            item.style.padding = '10px';
+                            item.style.background = 'var(--input)';
+
                             const a = document.createElement('a');
                             a.className = 'link';
                             a.href = `${basePath()}/${encodeURIComponent(e.username)}/${e.date}`;
                             a.textContent = `${e.date} – ${e.username}: ${e.title || 'Untitled'}`;
                             a.target = '_blank'; a.rel = 'noopener';
-                            const item = document.createElement('div'); item.appendChild(a); list.appendChild(item);
+
+                            const preview = document.createElement('div');
+                            preview.className = 'helper';
+                            preview.style.marginTop = '6px';
+                            const text = String(e.content || '').replace(/\s+/g, ' ').trim();
+                            const snippet = text.length > 160 ? text.slice(0, 160) + '…' : text;
+                            preview.textContent = snippet || '—';
+
+                            item.appendChild(a);
+                            item.appendChild(preview);
+                            list.appendChild(item);
                         });
                         wrap.innerHTML = ''; wrap.appendChild(list);
                     } catch (e) { node.querySelector('#pub-list').textContent = e.message; }
@@ -762,7 +787,10 @@
 
                     const entries = await ensureEntries();
                     const entriesByDate = {};
-                    for (const e of entries) { entriesByDate[e.date] = e; }
+                    for (const e of entries) {
+                        const list = entriesByDate[e.date] || (entriesByDate[e.date] = []);
+                        list.push(e);
+                    }
 
                     for (let day = 1; day <= daysInMonth; day++) {
                         const dstr = String(calYear) + '-' + String(calMonth + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
@@ -773,11 +801,16 @@
                         cell.style.minHeight = '72px';
                         cell.style.background = 'var(--input)';
                         const head = document.createElement('div'); head.className = 'helper'; head.textContent = day; cell.appendChild(head);
-                        const entry = entriesByDate[dstr];
-                        if (entry) {
+                        const list = entriesByDate[dstr] || [];
+                        const count = list.length;
+                        if (count > 0) {
                             const a = document.createElement('a'); a.className = 'link'; a.href = `${basePath()}/${encodeURIComponent(username)}/${dstr}`; a.target = '_blank'; a.rel = 'noopener';
-                            a.textContent = (entry.title || 'Untitled');
+                            const first = list[0];
+                            a.textContent = (first.title || 'Untitled');
                             const p = document.createElement('div'); p.style.marginTop = '6px'; p.appendChild(a); cell.appendChild(p);
+                            const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = String(count);
+                            badge.style.float = 'right';
+                            head.appendChild(badge);
                         } else {
                             const p = document.createElement('div'); p.className = 'helper'; p.style.marginTop = '6px'; p.textContent = '—'; cell.appendChild(p);
                         }
