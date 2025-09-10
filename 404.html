@@ -5,7 +5,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Redirecting…</title>
-    <meta http-equiv="refresh" content="0; url=/Diary/" />
     <style>
         html,
         body {
@@ -32,11 +31,13 @@
     </div>
     <script>
         (function () {
-            // GitHub Pages: send users back to the SPA entry. Adjust "/Diary/" if repo name changes.
-            var base = '/Diary/';
-            var url = new URL(window.location.href);
-            // Preserve the original path as is; SPA will parse window.location.pathname
-            window.location.replace(base + '#public');
+            // Compute repo base (first path segment) and preserve original path as query
+            var segs = location.pathname.split('/').filter(Boolean);
+            var base = segs.length ? '/' + segs[0] + '/' : '/';
+            var target = base + '?path=' + encodeURIComponent(location.pathname);
+            if (location.search) { target += encodeURIComponent(location.search); }
+            if (location.hash) { target += encodeURIComponent(location.hash); }
+            location.replace(target);
         })();
     </script>
 </body>

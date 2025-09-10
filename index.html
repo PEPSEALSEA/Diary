@@ -206,6 +206,7 @@
             <div class="nav">
                 <a id="nav-home" href="#">Home</a>
                 <a id="nav-public" href="#public">Public</a>
+                <a id="nav-config" href="#">Config</a>
                 <a id="nav-logout" href="#" style="display:none">Logout</a>
             </div>
         </div>
@@ -218,9 +219,10 @@
 
     <script>
         (function () {
-            const API_URL = (function () {
-                return localStorage.getItem('https://script.google.com/macros/s/AKfycbxR7BQFNg_LHPspcMYXLpdwMQ6Ql6fzr1DVDryXCYdW4aPJlvb4oXFPx-Tng4ofmQLvmw/exec') || '';
-            })();
+            const API_KEY = 'https://script.google.com/macros/s/AKfycbxR7BQFNg_LHPspcMYXLpdwMQ6Ql6fzr1DVDryXCYdW4aPJlvb4oXFPx-Tng4ofmQLvmw/exec';
+            function getApiUrl() { return localStorage.getItem(API_KEY) || ''; }
+            function setApiUrl(u) { if (u) localStorage.setItem(API_KEY, u); }
+            let API_URL = getApiUrl();
 
             const storage = {
                 set(k, v, days) {
@@ -253,6 +255,33 @@
             function el(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstChild; }
             function fmtDate(d) { const x = new Date(d); return x.toISOString().slice(0, 10); }
             function today() { return fmtDate(new Date()); }
+            function basePath() {
+                const segs = location.pathname.split('/').filter(Boolean);
+                return segs.length ? '/' + segs[0] : '';
+            }
+            function ensureApiConfigured(mount) {
+                if (API_URL) return true;
+                const box = el(`
+                  <div class="card">
+                    <h3>Configure API</h3>
+                    <div class="spacer"></div>
+                    <label>Apps Script Web App URL</label>
+                    <input id="cfg-url" placeholder="https://script.google.com/macros/s/.../exec" />
+                    <div class="spacer"></div>
+                    <button id="cfg-save">Save</button>
+                    <span class="helper">You can change this later via Config.</span>
+                  </div>
+                `);
+                box.querySelector('#cfg-save').addEventListener('click', () => {
+                    const val = box.querySelector('#cfg-url').value.trim();
+                    if (!val) return;
+                    setApiUrl(val);
+                    API_URL = getApiUrl();
+                    render();
+                });
+                mount.appendChild(box);
+                return false;
+            }
 
             async function apiGet(params) {
                 if (!API_URL) { throw new Error('API URL not configured'); }
@@ -274,8 +303,10 @@
                 const mount = q('#route-view');
                 mount.innerHTML = '';
 
-                const path = window.location.pathname.replace(/^\/+|\/+$/g, '');
-                // GitHub Pages style: repo/Username/Date -> try to extract last two segments
+                const qp = new URLSearchParams(window.location.search);
+                const rawPath = qp.get('path') || window.location.pathname;
+                const trimmed = rawPath.replace(new RegExp('^' + basePath().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), '');
+                const path = trimmed.replace(/^\/+|\/+$/g, '');
                 const segments = path.split('/').filter(Boolean);
                 const last = segments.slice(-2);
                 const maybeUser = last.length === 2 ? last[0] : null;
@@ -290,7 +321,10 @@
                     return mount.appendChild(PublicEntry(maybeUser, maybeDate));
                 }
 
-                if (auth.user) {
+                if (!API_URL) {
+                    ensureApiConfigured(mount);
+                    return;
+                } else if (auth.user) {
                     q('#nav-logout').style.display = 'inline';
                     return mount.appendChild(Dashboard());
                 } else {
@@ -435,7 +469,7 @@
 
                 function setPermalink() {
                     const d = dateInput.value || today();
-                    const base = window.location.origin + window.location.pathname.replace(/\/$/, '');
+                    const base = window.location.origin + basePath();
                     permalink.href = base + '/' + encodeURIComponent(user.username) + '/' + d;
                     permalink.textContent = permalink.href;
                 }
@@ -451,7 +485,7 @@
                         res.entries.slice(0, 20).forEach(e => {
                             const a = document.createElement('a');
                             a.className = 'link';
-                            a.href = `/${encodeURIComponent(user.username)}/${e.date}`;
+                            a.href = `${basePath()}/${encodeURIComponent(user.username)}/${e.date}`;
                             a.textContent = `${e.date} — ${e.title || 'Untitled'} ${e.isPrivate ? '(private)' : ''}`;
                             a.target = '_blank'; a.rel = 'noopener';
                             const item = document.createElement('div'); item.appendChild(a); list.appendChild(item);
@@ -582,7 +616,7 @@
                         res.entries.slice(0, 50).forEach(e => {
                             const a = document.createElement('a');
                             a.className = 'link';
-                            a.href = `/${encodeURIComponent(e.username)}/${e.date}`;
+                            a.href = `${basePath()}/${encodeURIComponent(e.username)}/${e.date}`;
                             a.textContent = `${e.date} – ${e.username}: ${e.title || 'Untitled'}`;
                             a.target = '_blank'; a.rel = 'noopener';
                             const item = document.createElement('div'); item.appendChild(a); list.appendChild(item);
@@ -595,6 +629,7 @@
             }
 
             q('#nav-logout').addEventListener('click', (e) => { e.preventDefault(); auth.user = null; render(); });
+            q('#nav-config').addEventListener('click', (e) => { e.preventDefault(); const current = getApiUrl(); const val = prompt('Enter Apps Script Web App URL', current || ''); if (val !== null) { setApiUrl(val.trim()); API_URL = getApiUrl(); render(); } });
             window.addEventListener('hashchange', render);
             window.addEventListener('popstate', render);
 
