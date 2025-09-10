@@ -546,18 +546,30 @@
                     clearMsg();
                     try {
                         const d = dateInput.value || today();
-                        const res = await apiGet({ action: 'getDiaryEntry', username: user.username, date: d });
-                        if (res.success && res.entry) {
-                            titleInput.value = res.entry.title || '';
-                            contentInput.value = res.entry.content || '';
-                            // When viewing via public endpoint, privacy info not returned if private
-                            // We cannot infer true privacy on success. Keep user selection.
-                            setMsg('Loaded entry for ' + d, true);
-                        } else {
-                            titleInput.value = '';
-                            contentInput.value = '';
-                            setMsg(res.error || 'No entry for ' + d, false);
+                        // Try public endpoint first; if private/not found, fallback to user list and pick exact date
+                        let ok = false;
+                        try {
+                          const pub = await apiGet({ action: 'getDiaryEntry', username: user.username, date: d });
+                          if (pub.success && pub.entry) {
+                            titleInput.value = pub.entry.title || '';
+                            contentInput.value = pub.entry.content || '';
+                            ok = true;
+                          }
+                        } catch (e) {}
+                        if (!ok) {
+                          const list = await apiGet({ action: 'getUserDiaryEntries', userId: user.id, month: d.slice(0,7) });
+                          if (list.success && Array.isArray(list.entries)) {
+                            const found = list.entries.find(e => e.date === d);
+                            if (found) {
+                              titleInput.value = found.title || '';
+                              contentInput.value = found.content || '';
+                              privacySelect.value = String(!!found.isPrivate);
+                              ok = true;
+                            }
+                          }
                         }
+                        if (ok) setMsg('Loaded entry for ' + d, true);
+                        else { titleInput.value=''; contentInput.value=''; setMsg('No entry for ' + d, false); }
                     } catch (e) { setMsg(e.message, false); }
                 }
 
