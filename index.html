@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Diary</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0b0e14;
+            --panel: #111620;
+            --panel-2: #0f1420;
+            --text: #e6edf3;
+            --muted: #9aa5b1;
+            --accent: #3b82f6;
+            --accent-2: #60a5fa;
+            --danger: #ef4444;
+            --ok: #10b981;
+            --border: #1f2937;
+            --input: #0c121c
+        }
+
+        * {
+            box-sizing: border-box
+        }
+
+        html,
+        body {
+            height: 100%
+        }
+
+        body {
+            margin: 0;
+            font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+            background: linear-gradient(180deg, #0b0e14, #0a0f1a 40%, #0b1220);
+            color: var(--text)
+        }
+
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 24px
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px
+        }
+
+        .brand {
+            font-weight: 700;
+            letter-spacing: .4px
+        }
+
+        .nav a {
+            color: var(--muted);
+            text-decoration: none;
+            margin-left: 16px
+        }
+
+        .card {
+            background: linear-gradient(180deg, var(--panel), var(--panel-2));
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+            padding: 20px
+        }
+
+        .row {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap
+        }
+
+        .col {
+            flex: 1 1 320px
+        }
+
+        label {
+            display: block;
+            font-size: 12px;
+            color: var(--muted);
+            margin-bottom: 6px
+        }
+
+        input,
+        textarea,
+        select,
+        button {
+            font: inherit
+        }
+
+        input,
+        textarea {
+            width: 100%;
+            padding: 12px 12px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: var(--input);
+            color: var(--text)
+        }
+
+        textarea {
+            min-height: 220px;
+            resize: vertical
+        }
+
+        button {
+            background: var(--accent);
+            color: white;
+            border: 0;
+            border-radius: 10px;
+            padding: 10px 14px;
+            cursor: pointer
+        }
+
+        button.ghost {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text)
+        }
+
+        button.danger {
+            background: var(--danger)
+        }
+
+        button:disabled {
+            opacity: .6;
+            cursor: not-allowed
+        }
+
+        .helper {
+            font-size: 12px;
+            color: var(--muted)
+        }
+
+        .spacer {
+            height: 12px
+        }
+
+        hr {
+            border: 0;
+            border-top: 1px solid var(--border);
+            margin: 16px 0
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 999px;
+            font-size: 12px;
+            border: 1px solid var(--border);
+            background: #0c121a;
+            color: var(--muted)
+        }
+
+        .kbd {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            background: #0e1420;
+            border: 1px solid var(--border);
+            border-bottom-color: #111826;
+            border-radius: 6px;
+            padding: 2px 6px;
+            color: #bcd;
+        }
+
+        .link {
+            color: var(--accent-2);
+            text-decoration: none
+        }
+
+        .footer {
+            margin-top: 28px;
+            color: var(--muted);
+            font-size: 12px;
+            text-align: center
+        }
+
+        .notice {
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: #0c1320;
+            color: #cbd5e1
+        }
+
+        .error {
+            color: #fecaca
+        }
+
+        .success {
+            color: #bbf7d0
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="brand">Daily Diary</div>
+            <div class="nav">
+                <a id="nav-home" href="#">Home</a>
+                <a id="nav-public" href="#public">Public</a>
+                <a id="nav-logout" href="#" style="display:none">Logout</a>
+            </div>
+        </div>
+
+        <div id="route-view"></div>
+
+        <div class="footer">Built on Google Sheets · <span class="kbd">/Username/YYYY-MM-DD</span> for public links
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            const API_URL = (function () {
+                return localStorage.getItem('https://script.google.com/macros/s/AKfycbxR7BQFNg_LHPspcMYXLpdwMQ6Ql6fzr1DVDryXCYdW4aPJlvb4oXFPx-Tng4ofmQLvmw/exec') || '';
+            })();
+
+            const storage = {
+                set(k, v, days) {
+                    const value = typeof v === 'string' ? v : JSON.stringify(v);
+                    const expires = days ? "; max-age=" + (days * 24 * 60 * 60) : '';
+                    document.cookie = encodeURIComponent(k) + "=" + encodeURIComponent(value) + expires + "; path=/";
+                },
+                get(k) {
+                    const name = encodeURIComponent(k) + "=";
+                    const parts = document.cookie.split('; ');
+                    for (const p of parts) {
+                        if (p.startsWith(name)) {
+                            const val = decodeURIComponent(p.substring(name.length));
+                            try { return JSON.parse(val); } catch { return val; }
+                        }
+                    }
+                    return null;
+                },
+                del(k) {
+                    document.cookie = encodeURIComponent(k) + "=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
+                }
+            };
+
+            const auth = {
+                get user() { return storage.get('diary_user'); },
+                set user(u) { if (u) storage.set('diary_user', u, 30); else storage.del('diary_user'); }
+            };
+
+            function q(sel, root = document) { return root.querySelector(sel); }
+            function el(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstChild; }
+            function fmtDate(d) { const x = new Date(d); return x.toISOString().slice(0, 10); }
+            function today() { return fmtDate(new Date()); }
+
+            async function apiGet(params) {
+                if (!API_URL) { throw new Error('API URL not configured'); }
+                const qs = new URLSearchParams(params).toString();
+                const res = await fetch(API_URL + '?' + qs, { method: 'GET' });
+                return res.json();
+            }
+            async function apiPost(params) {
+                if (!API_URL) { throw new Error('API URL not configured'); }
+                const form = new URLSearchParams(params);
+                const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString() });
+                return res.json();
+            }
+
+            function show(elm) { elm.style.display = ''; }
+            function hide(elm) { elm.style.display = 'none'; }
+
+            function render() {
+                const mount = q('#route-view');
+                mount.innerHTML = '';
+
+                const path = window.location.pathname.replace(/^\/+|\/+$/g, '');
+                // GitHub Pages style: repo/Username/Date -> try to extract last two segments
+                const segments = path.split('/').filter(Boolean);
+                const last = segments.slice(-2);
+                const maybeUser = last.length === 2 ? last[0] : null;
+                const maybeDate = last.length === 2 ? last[1] : null;
+
+                const hash = window.location.hash || '';
+                if (hash.startsWith('#public')) {
+                    return mount.appendChild(PublicList());
+                }
+
+                if (maybeUser && /^\d{4}-\d{2}-\d{2}$/.test(maybeDate)) {
+                    return mount.appendChild(PublicEntry(maybeUser, maybeDate));
+                }
+
+                if (auth.user) {
+                    q('#nav-logout').style.display = 'inline';
+                    return mount.appendChild(Dashboard());
+                } else {
+                    q('#nav-logout').style.display = 'none';
+                    return mount.appendChild(AuthPage());
+                }
+            }
+
+            function AuthPage() {
+                const node = el(`
+      <div class="row">
+        <div class="col">
+          <div class="card">
+            <h3>Login</h3>
+            <div class="spacer"></div>
+            <label>Username or Email</label>
+            <input id="login-identifier" placeholder="you@example.com or username" />
+            <div class="spacer"></div>
+            <label>Password</label>
+            <input id="login-password" type="password" />
+            <div class="spacer"></div>
+            <button id="btn-login">Login</button>
+            <span class="helper" id="login-msg"></span>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card">
+            <h3>Register</h3>
+            <div class="spacer"></div>
+            <label>Email</label>
+            <input id="reg-email" placeholder="you@example.com" />
+            <div class="spacer"></div>
+            <label>Username</label>
+            <input id="reg-username" placeholder="yourname" />
+            <div class="spacer"></div>
+            <label>Password</label>
+            <input id="reg-password" type="password" />
+            <div class="spacer"></div>
+            <button id="btn-register">Create account</button>
+            <span class="helper" id="reg-msg"></span>
+          </div>
+        </div>
+      </div>
+    `);
+
+                node.querySelector('#btn-login').addEventListener('click', async () => {
+                    const identifier = node.querySelector('#login-identifier').value.trim();
+                    const password = node.querySelector('#login-password').value;
+                    const msg = node.querySelector('#login-msg');
+                    msg.textContent = '';
+                    try {
+                        const res = await apiPost({ action: 'login', identifier, password });
+                        if (res.success) {
+                            auth.user = res.user; // {id,email,username}
+                            render();
+                        } else {
+                            msg.textContent = res.error || res.message || 'Login failed';
+                            msg.className = 'helper error';
+                        }
+                    } catch (e) { msg.textContent = e.message; msg.className = 'helper error'; }
+                });
+
+                node.querySelector('#btn-register').addEventListener('click', async () => {
+                    const email = node.querySelector('#reg-email').value.trim();
+                    const username = node.querySelector('#reg-username').value.trim();
+                    const password = node.querySelector('#reg-password').value;
+                    const msg = node.querySelector('#reg-msg');
+                    msg.textContent = '';
+                    try {
+                        const res = await apiPost({ action: 'register', email, username, password });
+                        if (res.success) {
+                            msg.textContent = 'Registered. You can now login.';
+                            msg.className = 'helper success';
+                        } else {
+                            msg.textContent = res.error || res.message || 'Registration failed';
+                            msg.className = 'helper error';
+                        }
+                    } catch (e) { msg.textContent = e.message; msg.className = 'helper error'; }
+                });
+
+                return node;
+            }
+
+            function Dashboard() {
+                const user = auth.user;
+                const node = el(`
+      <div class="row">
+        <div class="col">
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+              <div>
+                <h3>My Diary</h3>
+                <div class="helper">Logged in as <span class="badge">${user.username}</span></div>
+              </div>
+              <div class="helper">Public link format: <span class="kbd">/${user.username}/YYYY-MM-DD</span></div>
+            </div>
+            <div class="spacer"></div>
+            <label>Date</label>
+            <input id="diary-date" type="date" value="${today()}" />
+            <div class="spacer"></div>
+            <label>Title</label>
+            <input id="diary-title" placeholder="Optional title" />
+            <div class="spacer"></div>
+            <label>Content</label>
+            <textarea id="diary-content" placeholder="Write your day..."></textarea>
+            <div class="spacer"></div>
+            <label>Privacy</label>
+            <select id="diary-private">
+              <option value="false">Public (anyone with link)</option>
+              <option value="true">Private (only you)</option>
+            </select>
+            <div class="spacer"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button id="btn-load">Load</button>
+              <button id="btn-save">Save</button>
+              <button id="btn-update" class="ghost">Update</button>
+              <button id="btn-delete" class="danger">Delete</button>
+              <a id="permalink" class="link" target="_blank" rel="noopener">Open public link</a>
+            </div>
+            <div class="spacer"></div>
+            <div id="dash-msg" class="notice" style="display:none"></div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card">
+            <h3>Recent entries</h3>
+            <div id="recent-list" class="helper">Loading…</div>
+          </div>
+        </div>
+      </div>
+    `);
+
+                const dateInput = node.querySelector('#diary-date');
+                const titleInput = node.querySelector('#diary-title');
+                const contentInput = node.querySelector('#diary-content');
+                const privacySelect = node.querySelector('#diary-private');
+                const msg = node.querySelector('#dash-msg');
+                const permalink = node.querySelector('#permalink');
+
+                function setMsg(text, ok) { msg.textContent = text; msg.style.display = 'block'; msg.className = 'notice ' + (ok ? 'success' : 'error'); }
+                function clearMsg() { msg.textContent = ''; msg.style.display = 'none'; }
+
+                function setPermalink() {
+                    const d = dateInput.value || today();
+                    const base = window.location.origin + window.location.pathname.replace(/\/$/, '');
+                    permalink.href = base + '/' + encodeURIComponent(user.username) + '/' + d;
+                    permalink.textContent = permalink.href;
+                }
+                setPermalink();
+
+                async function loadRecent() {
+                    try {
+                        const res = await apiGet({ action: 'getUserDiaryEntries', userId: user.id, year: new Date().getFullYear() });
+                        const wrap = node.querySelector('#recent-list');
+                        if (!res.success) { wrap.textContent = res.error || 'Failed to load'; return; }
+                        if (!res.entries || res.entries.length === 0) { wrap.textContent = 'No entries yet.'; return; }
+                        const list = document.createElement('div');
+                        res.entries.slice(0, 20).forEach(e => {
+                            const a = document.createElement('a');
+                            a.className = 'link';
+                            a.href = `/${encodeURIComponent(user.username)}/${e.date}`;
+                            a.textContent = `${e.date} — ${e.title || 'Untitled'} ${e.isPrivate ? '(private)' : ''}`;
+                            a.target = '_blank'; a.rel = 'noopener';
+                            const item = document.createElement('div'); item.appendChild(a); list.appendChild(item);
+                        });
+                        wrap.innerHTML = ''; wrap.appendChild(list);
+                    } catch (e) { const wrap = node.querySelector('#recent-list'); wrap.textContent = e.message; }
+                }
+
+                async function load() {
+                    clearMsg();
+                    try {
+                        const d = dateInput.value || today();
+                        const res = await apiGet({ action: 'getDiaryEntry', username: user.username, date: d });
+                        if (res.success && res.entry) {
+                            titleInput.value = res.entry.title || '';
+                            contentInput.value = res.entry.content || '';
+                            // When viewing via public endpoint, privacy info not returned if private
+                            // We cannot infer true privacy on success. Keep user selection.
+                            setMsg('Loaded entry for ' + d, true);
+                        } else {
+                            titleInput.value = '';
+                            contentInput.value = '';
+                            setMsg(res.error || 'No entry for ' + d, false);
+                        }
+                    } catch (e) { setMsg(e.message, false); }
+                }
+
+                async function save() {
+                    clearMsg();
+                    const payload = {
+                        action: 'saveDiaryEntry',
+                        userId: user.id,
+                        date: dateInput.value || today(),
+                        title: titleInput.value,
+                        content: contentInput.value,
+                        isPrivate: privacySelect.value
+                    };
+                    try {
+                        const res = await apiPost(payload);
+                        if (res.success) { setMsg('Saved.', true); loadRecent(); }
+                        else { setMsg(res.error || res.message || 'Save failed', false); }
+                    } catch (e) { setMsg(e.message, false); }
+                }
+
+                async function update() {
+                    clearMsg();
+                    const payload = {
+                        action: 'updateDiaryEntry',
+                        userId: user.id,
+                        date: dateInput.value || today(),
+                        title: titleInput.value,
+                        content: contentInput.value,
+                        isPrivate: privacySelect.value
+                    };
+                    try {
+                        const res = await apiPost(payload);
+                        if (res.success) { setMsg('Updated.', true); loadRecent(); }
+                        else { setMsg(res.error || res.message || 'Update failed', false); }
+                    } catch (e) { setMsg(e.message, false); }
+                }
+
+                async function remove() {
+                    if (!confirm('Delete this entry?')) return;
+                    clearMsg();
+                    try {
+                        const res = await apiPost({ action: 'deleteDiaryEntry', userId: user.id, date: dateInput.value || today() });
+                        if (res.success) { titleInput.value = ''; contentInput.value = ''; setMsg('Deleted.', true); loadRecent(); }
+                        else { setMsg(res.error || 'Delete failed', false); }
+                    } catch (e) { setMsg(e.message, false); }
+                }
+
+                node.querySelector('#btn-load').addEventListener('click', load);
+                node.querySelector('#btn-save').addEventListener('click', save);
+                node.querySelector('#btn-update').addEventListener('click', update);
+                node.querySelector('#btn-delete').addEventListener('click', remove);
+                dateInput.addEventListener('change', setPermalink);
+
+                loadRecent();
+                return node;
+            }
+
+            function PublicEntry(username, date) {
+                const node = el(`
+      <div class="card">
+        <h3>Public diary</h3>
+        <div class="helper">${username} · ${date}</div>
+        <div class="spacer"></div>
+        <div id="pub-msg" class="notice" style="display:none"></div>
+        <div id="pub-title" class="helper"></div>
+        <pre id="pub-content" style="white-space:pre-wrap;background:#0c121a;border:1px solid var(--border);padding:12px;border-radius:10px"></pre>
+      </div>
+    `);
+
+                const msg = node.querySelector('#pub-msg');
+                function setMsg(text, ok) { msg.textContent = text; msg.style.display = 'block'; msg.className = 'notice ' + (ok ? 'success' : 'error'); }
+
+                (async function () {
+                    try {
+                        const res = await apiGet({ action: 'getDiaryEntry', username, date });
+                        if (res.success && res.entry) {
+                            node.querySelector('#pub-title').textContent = res.entry.title || '';
+                            node.querySelector('#pub-content').textContent = res.entry.content || '';
+                            setMsg('Public entry', true);
+                        } else {
+                            setMsg(res.error || 'Not found or private', false);
+                        }
+                    } catch (e) { setMsg(e.message, false); }
+                })();
+
+                return node;
+            }
+
+            function PublicList() {
+                const node = el(`
+      <div class="card">
+        <h3>Latest public entries</h3>
+        <div id="pub-list" class="helper">Loading…</div>
+      </div>
+    `);
+
+                (async function () {
+                    try {
+                        const res = await apiGet({ action: 'getPublicDiaryEntries' });
+                        const wrap = node.querySelector('#pub-list');
+                        if (!res.success) { wrap.textContent = res.error || 'Failed to load'; return; }
+                        if (!res.entries || res.entries.length === 0) { wrap.textContent = 'No public entries yet.'; return; }
+                        const list = document.createElement('div');
+                        res.entries.slice(0, 50).forEach(e => {
+                            const a = document.createElement('a');
+                            a.className = 'link';
+                            a.href = `/${encodeURIComponent(e.username)}/${e.date}`;
+                            a.textContent = `${e.date} – ${e.username}: ${e.title || 'Untitled'}`;
+                            a.target = '_blank'; a.rel = 'noopener';
+                            const item = document.createElement('div'); item.appendChild(a); list.appendChild(item);
+                        });
+                        wrap.innerHTML = ''; wrap.appendChild(list);
+                    } catch (e) { node.querySelector('#pub-list').textContent = e.message; }
+                })();
+
+                return node;
+            }
+
+            q('#nav-logout').addEventListener('click', (e) => { e.preventDefault(); auth.user = null; render(); });
+            window.addEventListener('hashchange', render);
+            window.addEventListener('popstate', render);
+
+            // Initial render
+            render();
+        })();
+    </script>
+</body>
+
+</html>

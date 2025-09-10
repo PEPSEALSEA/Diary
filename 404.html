@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Redirecting…</title>
+    <meta http-equiv="refresh" content="0; url=/Diary/" />
+    <style>
+        html,
+        body {
+            height: 100%
+        }
+
+        body {
+            margin: 0;
+            display: grid;
+            place-items: center;
+            font: 16px system-ui, Segoe UI, Roboto, Helvetica, Arial;
+            background: #0b0e14;
+            color: #e6edf3
+        }
+    </style>
+</head>
+
+<body>
+    <div>
+        <div>Redirecting…</div>
+        <noscript>
+            <p>This site requires JavaScript. Go to <a href="/Diary/">/Diary/</a>.</p>
+        </noscript>
+    </div>
+    <script>
+        (function () {
+            // GitHub Pages: send users back to the SPA entry. Adjust "/Diary/" if repo name changes.
+            var base = '/Diary/';
+            var url = new URL(window.location.href);
+            // Preserve the original path as is; SPA will parse window.location.pathname
+            window.location.replace(base + '#public');
+        })();
+    </script>
+</body>
+
+</html>
