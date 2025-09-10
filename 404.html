@@ -31,9 +31,9 @@
     </div>
     <script>
         (function () {
-            // Compute repo base (first path segment) and preserve original path as query
-            var segs = location.pathname.split('/').filter(Boolean);
-            var base = segs.length ? '/' + segs[0] + '/' : '/';
+            // Redirect back to app entry with original path preserved
+            // Prefer project base '/Diary/' if present in the path; otherwise fall back to '/'
+            var base = location.pathname.indexOf('/Diary/') !== -1 ? '/Diary/' : '/';
             var target = base + '?path=' + encodeURIComponent(location.pathname);
             location.replace(target);
         })();

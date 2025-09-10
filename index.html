@@ -466,8 +466,8 @@
                 setPermalink();
 
                 // Tabs
-                function showEditor(){ secEditor.style.display=''; secCalendar.style.display='none'; tabEditor.classList.remove('ghost'); tabCalendar.classList.add('ghost'); }
-                function showCalendar(){ secEditor.style.display='none'; secCalendar.style.display=''; tabEditor.classList.add('ghost'); tabCalendar.classList.remove('ghost'); }
+                function showEditor() { secEditor.style.display = ''; secCalendar.style.display = 'none'; tabEditor.classList.remove('ghost'); tabCalendar.classList.add('ghost'); }
+                function showCalendar() { secEditor.style.display = 'none'; secCalendar.style.display = ''; tabEditor.classList.add('ghost'); tabCalendar.classList.remove('ghost'); }
                 tabEditor.addEventListener('click', showEditor);
                 tabCalendar.addEventListener('click', showCalendar);
 
@@ -479,51 +479,51 @@
                 const calNext = node.querySelector('#cal-next');
                 const calHost = node.querySelector('#calendar');
 
-                calPrev.addEventListener('click', () => { calMonth--; if(calMonth<0){ calMonth=11; calYear--; } renderCalendar(); });
-                calNext.addEventListener('click', () => { calMonth++; if(calMonth>11){ calMonth=0; calYear++; } renderCalendar(); });
+                calPrev.addEventListener('click', () => { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); });
+                calNext.addEventListener('click', () => { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } renderCalendar(); });
 
-                async function renderCalendar(){
-                  const first = new Date(calYear, calMonth, 1);
-                  const monthStr = String(calYear) + '-' + String(calMonth+1).padStart(2,'0');
-                  calLabel.textContent = first.toLocaleString(undefined,{month:'long', year:'numeric'});
-                  calHost.innerHTML = '';
-                  const grid = document.createElement('div');
-                  grid.style.display='grid';
-                  grid.style.gridTemplateColumns='repeat(7,1fr)';
-                  grid.style.gap='8px';
-                  const weekdays = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-                  weekdays.forEach(d=>{ const h=document.createElement('div'); h.className='helper'; h.textContent=d; grid.appendChild(h); });
-                  const startPad = first.getDay();
-                  const daysInMonth = new Date(calYear, calMonth+1, 0).getDate();
-                  for(let i=0;i<startPad;i++){ const pad=document.createElement('div'); grid.appendChild(pad); }
-                  let entriesByDate = {};
-                  try {
-                    const res = await apiGet({ action:'getUserDiaryEntries', userId:user.id, month: monthStr });
-                    if(res.success && Array.isArray(res.entries)){
-                      for(const e of res.entries){ entriesByDate[e.date] = e; }
+                async function renderCalendar() {
+                    const first = new Date(calYear, calMonth, 1);
+                    const monthStr = String(calYear) + '-' + String(calMonth + 1).padStart(2, '0');
+                    calLabel.textContent = first.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+                    calHost.innerHTML = '';
+                    const grid = document.createElement('div');
+                    grid.style.display = 'grid';
+                    grid.style.gridTemplateColumns = 'repeat(7,1fr)';
+                    grid.style.gap = '8px';
+                    const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                    weekdays.forEach(d => { const h = document.createElement('div'); h.className = 'helper'; h.textContent = d; grid.appendChild(h); });
+                    const startPad = first.getDay();
+                    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+                    for (let i = 0; i < startPad; i++) { const pad = document.createElement('div'); grid.appendChild(pad); }
+                    let entriesByDate = {};
+                    try {
+                        const res = await apiGet({ action: 'getUserDiaryEntries', userId: user.id, month: monthStr });
+                        if (res.success && Array.isArray(res.entries)) {
+                            for (const e of res.entries) { entriesByDate[e.date] = e; }
+                        }
+                    } catch (err) { }
+                    for (let day = 1; day <= daysInMonth; day++) {
+                        const dstr = String(calYear) + '-' + String(calMonth + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+                        const cell = document.createElement('div');
+                        cell.style.border = '1px solid var(--border)';
+                        cell.style.borderRadius = '10px';
+                        cell.style.padding = '8px';
+                        cell.style.minHeight = '72px';
+                        cell.style.background = 'var(--input)';
+                        const head = document.createElement('div'); head.className = 'helper'; head.textContent = day; cell.appendChild(head);
+                        const entry = entriesByDate[dstr];
+                        if (entry) {
+                            const a = document.createElement('a'); a.className = 'link'; a.href = `${basePath()}/${encodeURIComponent(user.username)}/${dstr}`; a.target = '_blank'; a.rel = 'noopener';
+                            a.textContent = (entry.title || 'Untitled') + (entry.isPrivate ? ' (private)' : '');
+                            const p = document.createElement('div'); p.style.marginTop = '6px'; p.appendChild(a); cell.appendChild(p);
+                        } else {
+                            const p = document.createElement('div'); p.className = 'helper'; p.style.marginTop = '6px'; p.textContent = '—'; cell.appendChild(p);
+                        }
+                        cell.addEventListener('click', () => { dateInput.value = dstr; showEditor(); setPermalink(); });
+                        grid.appendChild(cell);
                     }
-                  } catch(err) {}
-                  for(let day=1; day<=daysInMonth; day++){
-                    const dstr = String(calYear)+'-'+String(calMonth+1).padStart(2,'0')+'-'+String(day).padStart(2,'0');
-                    const cell = document.createElement('div');
-                    cell.style.border='1px solid var(--border)';
-                    cell.style.borderRadius='10px';
-                    cell.style.padding='8px';
-                    cell.style.minHeight='72px';
-                    cell.style.background='var(--input)';
-                    const head = document.createElement('div'); head.className='helper'; head.textContent=day; cell.appendChild(head);
-                    const entry = entriesByDate[dstr];
-                    if(entry){
-                      const a=document.createElement('a'); a.className='link'; a.href=`${basePath()}/${encodeURIComponent(user.username)}/${dstr}`; a.target='_blank'; a.rel='noopener';
-                      a.textContent=(entry.title||'Untitled') + (entry.isPrivate ? ' (private)':'' );
-                      const p=document.createElement('div'); p.style.marginTop='6px'; p.appendChild(a); cell.appendChild(p);
-                    } else {
-                      const p=document.createElement('div'); p.className='helper'; p.style.marginTop='6px'; p.textContent='—'; cell.appendChild(p);
-                    }
-                    cell.addEventListener('click', ()=>{ dateInput.value=dstr; showEditor(); setPermalink(); });
-                    grid.appendChild(cell);
-                  }
-                  calHost.appendChild(grid);
+                    calHost.appendChild(grid);
                 }
 
                 // default to Editor; user can open Calendar tab
@@ -568,23 +568,23 @@
                         let ok = false;
                         const own = await apiGet({ action: 'getUserDiaryEntry', userId: user.id, date: d });
                         if (own.success && own.entry) {
-                          titleInput.value = own.entry.title || '';
-                          contentInput.value = own.entry.content || '';
-                          privacySelect.value = String(!!own.entry.isPrivate);
-                          ok = true;
+                            titleInput.value = own.entry.title || '';
+                            contentInput.value = own.entry.content || '';
+                            privacySelect.value = String(!!own.entry.isPrivate);
+                            ok = true;
                         } else {
-                          // Fallback to public view if this date is public and username/date requested directly
-                          try {
-                            const pub = await apiGet({ action: 'getDiaryEntry', username: user.username, date: d });
-                            if (pub.success && pub.entry) {
-                              titleInput.value = pub.entry.title || '';
-                              contentInput.value = pub.entry.content || '';
-                              ok = true;
-                            }
-                          } catch (e) {}
+                            // Fallback to public view if this date is public and username/date requested directly
+                            try {
+                                const pub = await apiGet({ action: 'getDiaryEntry', username: user.username, date: d });
+                                if (pub.success && pub.entry) {
+                                    titleInput.value = pub.entry.title || '';
+                                    contentInput.value = pub.entry.content || '';
+                                    ok = true;
+                                }
+                            } catch (e) { }
                         }
                         if (ok) setMsg('Loaded entry for ' + d, true);
-                        else { titleInput.value=''; contentInput.value=''; setMsg('No entry for ' + d, false); }
+                        else { titleInput.value = ''; contentInput.value = ''; setMsg('No entry for ' + d, false); }
                     } catch (e) { setMsg(e.message, false); }
                 }
 
