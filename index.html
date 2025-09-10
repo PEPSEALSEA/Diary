@@ -525,7 +525,7 @@
 
                 async function loadRecent() {
                     try {
-                        const res = await apiGet({ action: 'getUserDiaryEntries', userId: user.id, year: new Date().getFullYear() });
+                        const res = await apiGet({ action: 'getUserDiaryEntries', userId: user.id });
                         const wrap = node.querySelector('#recent-list');
                         if (!res.success) { wrap.textContent = res.error || 'Failed to load'; return; }
                         if (!res.entries || res.entries.length === 0) { wrap.textContent = 'No entries yet.'; return; }
