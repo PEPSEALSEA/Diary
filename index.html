@@ -460,7 +460,7 @@
                 function setPermalink() {
                     const d = dateInput.value || today();
                     const base = window.location.origin + basePath();
-                    permalink.href = base + '/' + encodeURIComponent(user.username) + '/' + d;
+                    permalink.href = base + '/' + encodeURIComponent(user.username) + '/' + d + '#public';
                     permalink.textContent = permalink.href;
                 }
                 setPermalink();
