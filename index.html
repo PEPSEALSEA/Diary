@@ -219,8 +219,9 @@
 
     <script>
         (function () {
-            const API_KEY = 'https://script.google.com/macros/s/AKfycbxR7BQFNg_LHPspcMYXLpdwMQ6Ql6fzr1DVDryXCYdW4aPJlvb4oXFPx-Tng4ofmQLvmw/exec';
-            function getApiUrl() { return localStorage.getItem(API_KEY) || ''; }
+            const API_KEY = 'apps_script_url';
+            const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbxR7BQFNg_LHPspcMYXLpdwMQ6Ql6fzr1DVDryXCYdW4aPJlvb4oXFPx-Tng4ofmQLvmw/exec';
+            function getApiUrl() { return localStorage.getItem(API_KEY) || DEFAULT_API_URL; }
             function setApiUrl(u) { if (u) localStorage.setItem(API_KEY, u); }
             let API_URL = getApiUrl();
 
