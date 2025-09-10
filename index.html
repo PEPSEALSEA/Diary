@@ -248,7 +248,13 @@
 
             function q(sel, root = document) { return root.querySelector(sel); }
             function el(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstChild; }
-            function fmtDate(d) { const x = new Date(d); return x.toISOString().slice(0, 10); }
+            function fmtDate(d) {
+                const x = new Date(d);
+                const y = x.getFullYear();
+                const m = String(x.getMonth() + 1).padStart(2, '0');
+                const day = String(x.getDate()).padStart(2, '0');
+                return y + '-' + m + '-' + day; // local date, not UTC
+            }
             function today() { return fmtDate(new Date()); }
             function basePath() {
                 const segs = location.pathname.split('/').filter(Boolean);
