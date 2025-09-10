@@ -246,9 +246,6 @@
                 set user(u) { if (u) storage.set('diary_user', u, 30); else storage.del('diary_user'); }
             };
 
-            // Consume and clear `?path=...` (from 404 redirect) once to prevent route from sticking
-            let consumedPathQuery = false;
-
             function q(sel, root = document) { return root.querySelector(sel); }
             function el(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstChild; }
             function fmtDate(d) { const x = new Date(d); return x.toISOString().slice(0, 10); }
@@ -279,14 +276,7 @@
                 mount.innerHTML = '';
 
                 const qp = new URLSearchParams(window.location.search);
-                const pathParam = qp.get('path');
-                if (pathParam && !consumedPathQuery) {
-                    consumedPathQuery = true;
-                    // Remove query param from URL (keep hash) so navigation works normally afterwards
-                    const cleanUrl = basePath() + (window.location.hash || '');
-                    try { window.history.replaceState(null, '', cleanUrl); } catch (e) {}
-                }
-                const rawPath = pathParam || window.location.pathname;
+                const rawPath = qp.get('path') || window.location.pathname;
                 const trimmed = rawPath.replace(new RegExp('^' + basePath().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), '');
                 const path = trimmed.replace(/^\/+|\/+$/g, '');
                 const segments = path.split('/').filter(Boolean);
@@ -541,12 +531,24 @@
                         if (!res.entries || res.entries.length === 0) { wrap.textContent = 'No entries yet.'; return; }
                         const list = document.createElement('div');
                         res.entries.slice(0, 20).forEach(e => {
+                            const item = document.createElement('div');
+                            item.style.marginBottom = '10px';
+
                             const a = document.createElement('a');
                             a.className = 'link';
                             a.href = `${basePath()}/${encodeURIComponent(user.username)}/${e.date}`;
                             a.textContent = `${e.date} — ${e.title || 'Untitled'} ${e.isPrivate ? '(private)' : ''}`;
                             a.target = '_blank'; a.rel = 'noopener';
-                            const item = document.createElement('div'); item.appendChild(a); list.appendChild(item);
+
+                            const preview = document.createElement('div');
+                            preview.className = 'helper';
+                            const text = String(e.content || '').replace(/\s+/g, ' ').trim();
+                            const snippet = text.length > 160 ? text.slice(0, 160) + '…' : text;
+                            preview.textContent = snippet || '—';
+
+                            item.appendChild(a);
+                            item.appendChild(preview);
+                            list.appendChild(item);
                         });
                         wrap.innerHTML = ''; wrap.appendChild(list);
                     } catch (e) { const wrap = node.querySelector('#recent-list'); wrap.textContent = e.message; }

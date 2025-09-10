@@ -35,8 +35,6 @@
             var segs = location.pathname.split('/').filter(Boolean);
             var base = segs.length ? '/' + segs[0] + '/' : '/';
             var target = base + '?path=' + encodeURIComponent(location.pathname);
-            if (location.search) { target += encodeURIComponent(location.search); }
-            if (location.hash) { target += encodeURIComponent(location.hash); }
             location.replace(target);
         })();
     </script>
