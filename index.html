@@ -313,9 +313,16 @@
                 mount.innerHTML = '';
 
                 const qp = new URLSearchParams(window.location.search);
-                const rawPath = qp.get('path') || window.location.pathname;
+                const pathParam = qp.get('path');
+                const rawPath = pathParam || window.location.pathname;
                 const trimmed = rawPath.replace(new RegExp('^' + basePath().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), '');
                 const path = trimmed.replace(/^\/+|\/+$/g, '');
+                // If we arrived via 404.html redirect (?path=...), replace URL with clean path for user friendliness
+                if (pathParam) {
+                    const newUrl = basePath() + (path ? '/' + path : '');
+                    const hash = window.location.hash || '';
+                    history.replaceState({}, '', newUrl + hash);
+                }
                 const segments = path.split('/').filter(Boolean);
                 const last = segments.slice(-2);
                 const maybeUser = last.length === 2 ? last[0] : null;
