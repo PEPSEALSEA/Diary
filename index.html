@@ -202,6 +202,24 @@
             white-space: nowrap;
             text-overflow: ellipsis
         }
+        #app-overlay {
+            position: fixed;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            background: rgba(5, 8, 13, .92);
+            color: var(--text);
+            z-index: 9999
+        }
+        #app-overlay .box {
+            background: linear-gradient(180deg, var(--panel), var(--panel-2));
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px 24px;
+            min-width: 260px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,.5)
+        }
     </style>
 </head>
 
@@ -219,6 +237,12 @@
         <div id="route-view"></div>
 
         <div class="footer">Make By PEPSEALSEA ©2025
+        </div>
+    </div>
+    <div id="app-overlay">
+        <div class="box">
+            <div style="font-weight:600;margin-bottom:6px">Loading…</div>
+            <div class="helper">Preparing your diary</div>
         </div>
     </div>
 
@@ -307,6 +331,7 @@
 
             function show(elm) { elm.style.display = ''; }
             function hide(elm) { elm.style.display = 'none'; }
+            function hideOverlay() { const o = q('#app-overlay'); if (o) o.style.display = 'none'; }
 
             function render() {
                 const mount = q('#route-view');
@@ -331,24 +356,34 @@
 
                 const hash = window.location.hash || '';
                 if (hash.startsWith('#public')) {
-                    return mount.appendChild(PublicList());
+                    const n = PublicList();
+                    hideOverlay();
+                    return mount.appendChild(n);
                 }
 
                 if (maybeUser && /^(?:\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4})$/.test(maybeDate)) {
-                    return mount.appendChild(PublicEntry(maybeUser, toIsoDate(maybeDate)));
+                    const n = PublicEntry(maybeUser, toIsoDate(maybeDate));
+                    // overlay will be hidden by PublicEntry after first fetch
+                    return mount.appendChild(n);
                 }
 
                 // Route: /:username → public calendar for that user
                 if (maybeUserOnly && !/^\d{4}-\d{2}-\d{2}$/.test(maybeUserOnly)) {
-                    return mount.appendChild(PublicUser(maybeUserOnly));
+                    const n = PublicUser(maybeUserOnly);
+                    // overlay will be hidden after initial calendar render
+                    return mount.appendChild(n);
                 }
 
                 if (auth.user) {
                     q('#nav-logout').style.display = 'inline';
-                    return mount.appendChild(Dashboard());
+                    const n = Dashboard();
+                    // overlay will be hidden inside once initial load completes
+                    return mount.appendChild(n);
                 } else {
                     q('#nav-logout').style.display = 'none';
-                    return mount.appendChild(AuthPage());
+                    const n = AuthPage();
+                    hideOverlay();
+                    return mount.appendChild(n);
                 }
             }
 
@@ -649,6 +684,8 @@
                         grid.appendChild(cell);
                     }
                     calHost.appendChild(grid);
+                    // Hide overlay after first calendar paint
+                    hideOverlay();
                 }
 
                 // default to Editor; user can open Calendar tab
@@ -836,7 +873,7 @@
 
                 // Initial quick load of today's entry in view mode
                 setMsg('Loading…', true);
-                load().finally(() => { applyEditMode(); });
+                load().finally(() => { applyEditMode(); hideOverlay(); });
 
                 // Prefetch all user entries once in background
                 (async function prefetchAll() {
@@ -908,6 +945,7 @@
                                 setMsg(res.error || 'Not found or private', false);
                             }
                         }
+                        hideOverlay();
                         if (!clientCache.publicByUser.has(username)) clientCache.publicByUser.set(username, { entries: [], byDate: {} });
                         (async function prefetchAllPublic() {
                             try {
@@ -928,7 +966,7 @@
                                 }
                             } catch (e) {}
                         })();
-                    } catch (e) { setMsg(e.message, false); }
+                    } catch (e) { setMsg(e.message, false); hideOverlay(); }
                 })();
 
                 // Prev/Next day navigation
