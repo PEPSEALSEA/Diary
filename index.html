@@ -248,6 +248,12 @@
 
             function q(sel, root = document) { return root.querySelector(sel); }
             function el(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstChild; }
+            const clientCache = {
+                userEntries: null, // Array of all entries for logged-in user
+                userEntriesByDate: {}, // date -> entries[]
+                userLoadedAll: false,
+                publicByUser: new Map(), // username -> {entries: [], byDate: {}}
+            };
             function fmtDate(d) {
                 const x = new Date(d);
                 const y = x.getFullYear();
@@ -403,6 +409,7 @@
             <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
               <button id="tab-editor">Editor</button>
               <button id="tab-calendar" class="ghost">Calendar</button>
+              <button id="btn-edit" class="ghost">Edit</button>
             </div>
             <div id="section-editor">
             <label>Date</label>
@@ -459,6 +466,7 @@
                 const tabCalendar = node.querySelector('#tab-calendar');
                 const secEditor = node.querySelector('#section-editor');
                 const secCalendar = node.querySelector('#section-calendar');
+                const btnEdit = node.querySelector('#btn-edit');
 
                 function setMsg(text, ok) { msg.textContent = text; msg.style.display = 'block'; msg.className = 'notice ' + (ok ? 'success' : 'error'); }
                 function clearMsg() { msg.textContent = ''; msg.style.display = 'none'; }
@@ -476,6 +484,22 @@
                 function showCalendar() { secEditor.style.display = 'none'; secCalendar.style.display = ''; tabEditor.classList.add('ghost'); tabCalendar.classList.remove('ghost'); }
                 tabEditor.addEventListener('click', showEditor);
                 tabCalendar.addEventListener('click', showCalendar);
+
+                // Edit mode toggle (read-only by default)
+                let editMode = false;
+                function applyEditMode() {
+                    const disabled = !editMode;
+                    titleInput.disabled = disabled;
+                    contentInput.disabled = disabled;
+                    privacySelect.disabled = disabled;
+                    dateInput.disabled = false; // allow switching date even in view mode
+                    q('#btn-save', node).style.display = editMode ? '' : 'none';
+                    q('#btn-update', node).style.display = editMode ? '' : 'none';
+                    q('#btn-delete', node).style.display = editMode ? '' : 'none';
+                    btnEdit.textContent = editMode ? 'Done' : 'Edit';
+                }
+                btnEdit.addEventListener('click', () => { editMode = !editMode; applyEditMode(); });
+                applyEditMode();
 
                 // Calendar
                 let calYear = new Date().getFullYear();
@@ -503,15 +527,25 @@
                     const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
                     for (let i = 0; i < startPad; i++) { const pad = document.createElement('div'); grid.appendChild(pad); }
                     let entriesByDate = {};
-                    try {
-                        const res = await apiGet({ action: 'getUserDiaryEntries', userId: user.id, month: monthStr });
-                        if (res.success && Array.isArray(res.entries)) {
-                            for (const e of res.entries) {
-                                const list = entriesByDate[e.date] || (entriesByDate[e.date] = []);
-                                list.push(e);
-                            }
+                    // Prefer client cache if available
+                    if (clientCache.userLoadedAll && clientCache.userEntries) {
+                        for (const e of clientCache.userEntries) {
+                            if (!e.date.startsWith(monthStr)) continue;
+                            const list = entriesByDate[e.date] || (entriesByDate[e.date] = []);
+                            list.push(e);
                         }
-                    } catch (err) { }
+                    } else {
+                        // fallback quick fetch for current month
+                        try {
+                            const res = await apiGet({ action: 'getUserDiaryEntries', userId: user.id, month: monthStr });
+                            if (res.success && Array.isArray(res.entries)) {
+                                for (const e of res.entries) {
+                                    const list = entriesByDate[e.date] || (entriesByDate[e.date] = []);
+                                    list.push(e);
+                                }
+                            }
+                        } catch (err) { }
+                    }
                     for (let day = 1; day <= daysInMonth; day++) {
                         const dstr = String(calYear) + '-' + String(calMonth + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
                         const cell = document.createElement('div');
@@ -545,6 +579,35 @@
 
                 async function loadRecent() {
                     try {
+                        // Prefer cache if loaded
+                        if (clientCache.userLoadedAll && Array.isArray(clientCache.userEntries)) {
+                            const wrap = node.querySelector('#recent-list');
+                            if (clientCache.userEntries.length === 0) { wrap.textContent = 'No entries yet.'; return; }
+                            const list = document.createElement('div');
+                            clientCache.userEntries.slice(0, 20).forEach(e => {
+                                const item = document.createElement('div');
+                                item.style.marginBottom = '10px';
+
+                                const a = document.createElement('a');
+                                a.className = 'link';
+                                a.href = `${basePath()}/${encodeURIComponent(user.username)}/${e.date}`;
+                                a.textContent = `${e.date} — ${e.title || 'Untitled'} ${e.isPrivate ? '(private)' : ''}`;
+                                a.target = '_blank'; a.rel = 'noopener';
+
+                                const preview = document.createElement('div');
+                                preview.className = 'helper';
+                                const text = String(e.content || '').replace(/\s+/g, ' ').trim();
+                                const snippet = text.length > 160 ? text.slice(0, 160) + '…' : text;
+                                preview.textContent = snippet || '—';
+
+                                item.appendChild(a);
+                                item.appendChild(preview);
+                                list.appendChild(item);
+                            });
+                            wrap.innerHTML = ''; wrap.appendChild(list);
+                            return;
+                        }
+
                         const res = await apiGet({ action: 'getUserDiaryEntries', userId: user.id });
                         const wrap = node.querySelector('#recent-list');
                         if (!res.success) { wrap.textContent = res.error || 'Failed to load'; return; }
@@ -580,22 +643,31 @@
                         const d = dateInput.value || today();
                         // Use private/self endpoint first
                         let ok = false;
-                        const own = await apiGet({ action: 'getUserDiaryEntry', userId: user.id, date: d });
-                        if (own.success && own.entry) {
-                            titleInput.value = own.entry.title || '';
-                            contentInput.value = own.entry.content || '';
-                            privacySelect.value = String(!!own.entry.isPrivate);
+                        // If cache has the entry, use it
+                        if (clientCache.userLoadedAll && clientCache.userEntriesByDate[d] && clientCache.userEntriesByDate[d].length > 0) {
+                            const ownEntry = clientCache.userEntriesByDate[d][0];
+                            titleInput.value = ownEntry.title || '';
+                            contentInput.value = ownEntry.content || '';
+                            privacySelect.value = String(!!ownEntry.isPrivate);
                             ok = true;
                         } else {
-                            // Fallback to public view if this date is public and username/date requested directly
-                            try {
-                                const pub = await apiGet({ action: 'getDiaryEntry', username: user.username, date: d });
-                                if (pub.success && pub.entry) {
-                                    titleInput.value = pub.entry.title || '';
-                                    contentInput.value = pub.entry.content || '';
-                                    ok = true;
-                                }
-                            } catch (e) { }
+                            const own = await apiGet({ action: 'getUserDiaryEntry', userId: user.id, date: d });
+                            if (own.success && own.entry) {
+                                titleInput.value = own.entry.title || '';
+                                contentInput.value = own.entry.content || '';
+                                privacySelect.value = String(!!own.entry.isPrivate);
+                                ok = true;
+                            } else {
+                                // Fallback to public view if this date is public and username/date requested directly
+                                try {
+                                    const pub = await apiGet({ action: 'getDiaryEntry', username: user.username, date: d });
+                                    if (pub.success && pub.entry) {
+                                        titleInput.value = pub.entry.title || '';
+                                        contentInput.value = pub.entry.content || '';
+                                        ok = true;
+                                    }
+                                } catch (e) { }
+                            }
                         }
                         if (ok) setMsg('Loaded entry for ' + d, true);
                         else { titleInput.value = ''; contentInput.value = ''; setMsg('No entry for ' + d, false); }
@@ -614,7 +686,18 @@
                     };
                     try {
                         const res = await apiPost(payload);
-                        if (res.success) { setMsg('Saved.', true); loadRecent(); }
+                        if (res.success) {
+                            setMsg('Saved.', true);
+                            // update client cache
+                            const entry = { date: payload.date, title: payload.title, content: payload.content, isPrivate: payload.isPrivate === 'true' || payload.isPrivate === true };
+                            if (!Array.isArray(clientCache.userEntries)) clientCache.userEntries = [];
+                            clientCache.userEntries.unshift(entry);
+                            clientCache.userLoadedAll = true;
+                            clientCache.userEntriesByDate[payload.date] = [entry];
+                            // re-render dependents
+                            renderCalendar();
+                            loadRecent();
+                        }
                         else { setMsg(res.error || res.message || 'Save failed', false); }
                     } catch (e) { setMsg(e.message, false); }
                 }
@@ -631,7 +714,16 @@
                     };
                     try {
                         const res = await apiPost(payload);
-                        if (res.success) { setMsg('Updated.', true); loadRecent(); }
+                        if (res.success) {
+                            setMsg('Updated.', true);
+                            // update client cache
+                            if (Array.isArray(clientCache.userEntries)) {
+                                for (const e of clientCache.userEntries) { if (e.date === payload.date) { e.title = payload.title; e.content = payload.content; e.isPrivate = payload.isPrivate === 'true' || payload.isPrivate === true; break; } }
+                            }
+                            clientCache.userEntriesByDate[payload.date] = [{ date: payload.date, title: payload.title, content: payload.content, isPrivate: payload.isPrivate === 'true' || payload.isPrivate === true }];
+                            renderCalendar();
+                            loadRecent();
+                        }
                         else { setMsg(res.error || res.message || 'Update failed', false); }
                     } catch (e) { setMsg(e.message, false); }
                 }
@@ -641,7 +733,15 @@
                     clearMsg();
                     try {
                         const res = await apiPost({ action: 'deleteDiaryEntry', userId: user.id, date: dateInput.value || today() });
-                        if (res.success) { titleInput.value = ''; contentInput.value = ''; setMsg('Deleted.', true); loadRecent(); }
+                        if (res.success) {
+                            titleInput.value = ''; contentInput.value = '';
+                            setMsg('Deleted.', true);
+                            const d = dateInput.value || today();
+                            if (Array.isArray(clientCache.userEntries)) { clientCache.userEntries = clientCache.userEntries.filter(e => e.date !== d); }
+                            delete clientCache.userEntriesByDate[d];
+                            renderCalendar();
+                            loadRecent();
+                        }
                         else { setMsg(res.error || 'Delete failed', false); }
                     } catch (e) { setMsg(e.message, false); }
                 }
@@ -651,6 +751,30 @@
                 node.querySelector('#btn-update').addEventListener('click', update);
                 node.querySelector('#btn-delete').addEventListener('click', remove);
                 dateInput.addEventListener('change', setPermalink);
+
+                // Initial quick load of today's entry in view mode
+                setMsg('Loading…', true);
+                load().finally(() => { applyEditMode(); });
+
+                // Prefetch all user entries once in background
+                (async function prefetchAll() {
+                    try {
+                        const res = await apiGet({ action: 'getUserDiaryEntries', userId: user.id });
+                        if (res.success && Array.isArray(res.entries)) {
+                            clientCache.userEntries = res.entries;
+                            clientCache.userEntriesByDate = {};
+                            for (const e of res.entries) {
+                                const list = clientCache.userEntriesByDate[e.date] || (clientCache.userEntriesByDate[e.date] = []);
+                                list.push(e);
+                            }
+                            clientCache.userLoadedAll = true;
+                            // refresh calendar and recent to avoid waiting later
+                            renderCalendar();
+                            loadRecent();
+                            clearMsg();
+                        } else { clearMsg(); }
+                    } catch (e) { clearMsg(); }
+                })();
 
                 loadRecent();
                 return node;
@@ -672,12 +796,25 @@
                 function setMsg(text, ok) { msg.textContent = text; msg.style.display = 'block'; msg.className = 'notice ' + (ok ? 'success' : 'error'); }
 
                 (async function () {
+                    setMsg('Loading…', true);
                     try {
                         const res = await apiGet({ action: 'getDiaryEntry', username, date });
                         if (res.success && res.entry) {
                             node.querySelector('#pub-title').textContent = res.entry.title || '';
                             node.querySelector('#pub-content').textContent = res.entry.content || '';
                             setMsg('Public entry', true);
+                            // Staged background prefetch for this user (warm cache)
+                            if (!clientCache.publicByUser.has(username)) clientCache.publicByUser.set(username, { entries: [], byDate: {} });
+                            (async function prefetchAllPublic() {
+                                try {
+                                    const all = await apiGet({ action: 'getPublicDiaryEntries', username, limit: '500' });
+                                    if (all.success && Array.isArray(all.entries)) {
+                                        const store = { entries: all.entries, byDate: {} };
+                                        for (const e of all.entries) { const list = store.byDate[e.date] || (store.byDate[e.date] = []); list.push(e); }
+                                        clientCache.publicByUser.set(username, store);
+                                    }
+                                } catch (e) {}
+                            })();
                         } else {
                             setMsg(res.error || 'Not found or private', false);
                         }
@@ -697,7 +834,7 @@
 
                 (async function () {
                     try {
-                        const res = await apiGet({ action: 'getPublicDiaryEntries' });
+                        const res = await apiGet({ action: 'getPublicDiaryEntries', limit: '50', maxContent: '220' });
                         const wrap = node.querySelector('#pub-list');
                         if (!res.success) { wrap.textContent = res.error || 'Failed to load'; return; }
                         if (!res.entries || res.entries.length === 0) { wrap.textContent = 'No public entries yet.'; return; }
@@ -756,23 +893,39 @@
                 const calNext = node.querySelector('#cal-next');
                 const calHost = node.querySelector('#calendar');
 
-                let publicEntries = null; // cache
+                let publicEntries = null; // month-first, then all
 
                 calPrev.addEventListener('click', () => { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); });
                 calNext.addEventListener('click', () => { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } renderCalendar(); });
 
                 async function ensureEntries() {
-                    if (publicEntries) return publicEntries;
-                    try {
-                        const res = await apiGet({ action: 'getPublicDiaryEntries', username });
-                        if (res.success && Array.isArray(res.entries)) {
-                            publicEntries = res.entries;
-                        } else {
-                            publicEntries = [];
-                        }
-                    } catch (e) {
-                        publicEntries = [];
+                    // If background all-data cache exists, use it
+                    const cachedUser = clientCache.publicByUser.get(username);
+                    if (cachedUser && Array.isArray(cachedUser.entries) && cachedUser.entries.length) {
+                        publicEntries = cachedUser.entries;
+                        return publicEntries;
                     }
+                    if (publicEntries) return publicEntries;
+                    // Quick month fetch for fast first paint
+                    try {
+                        const monthStr = String(calYear) + '-' + String(calMonth + 1).padStart(2, '0');
+                        const res = await apiGet({ action: 'getPublicDiaryEntries', username, month: monthStr, maxContent: '160' });
+                        publicEntries = (res.success && Array.isArray(res.entries)) ? res.entries : [];
+                    } catch (e) { publicEntries = []; }
+                    // Background prefetch of all public entries for user
+                    (async function prefetchAll() {
+                        try {
+                            const all = await apiGet({ action: 'getPublicDiaryEntries', username, limit: '500', maxContent: '220' });
+                            if (all.success && Array.isArray(all.entries)) {
+                                const store = { entries: all.entries, byDate: {} };
+                                for (const e of all.entries) { const list = store.byDate[e.date] || (store.byDate[e.date] = []); list.push(e); }
+                                clientCache.publicByUser.set(username, store);
+                                publicEntries = all.entries;
+                                // re-render current month with full data once ready
+                                renderCalendar();
+                            }
+                        } catch (e) {}
+                    })();
                     return publicEntries;
                 }
 
@@ -781,6 +934,7 @@
                     const monthStr = String(calYear) + '-' + String(calMonth + 1).padStart(2, '0');
                     calLabel.textContent = first.toLocaleString(undefined, { month: 'long', year: 'numeric' });
                     calHost.innerHTML = '';
+                    const loading = document.createElement('div'); loading.className = 'helper'; loading.textContent = 'Loading…'; calHost.appendChild(loading);
                     const grid = document.createElement('div');
                     grid.style.display = 'grid';
                     grid.style.gridTemplateColumns = 'repeat(7,1fr)';
@@ -798,6 +952,7 @@
                         list.push(e);
                     }
 
+                    calHost.innerHTML = '';
                     for (let day = 1; day <= daysInMonth; day++) {
                         const dstr = String(calYear) + '-' + String(calMonth + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
                         const cell = document.createElement('div');
