@@ -742,7 +742,7 @@
                         }
                         lastSavedSnapshot = { title: titleInput.value, content: contentInput.value, isPrivate: privacySelect.value, date: d };
                         if (ok) setMsg('Loaded entry for ' + toDisplayDate(d), true);
-                        else { titleInput.value = ''; contentInput.value = ''; setMsg('No entry for ' + d, false); }
+                        else { titleInput.value = ''; contentInput.value = ''; setMsg('No entry for ' + toDisplayDate(d), false); }
                     } catch (e) { setMsg(e.message, false); }
                 }
 
@@ -823,7 +823,7 @@
                 node.querySelector('#btn-save').addEventListener('click', save);
                 node.querySelector('#btn-update').addEventListener('click', update);
                 node.querySelector('#btn-delete').addEventListener('click', remove);
-                dateInput.addEventListener('change', setPermalink);
+                dateInput.addEventListener('change', () => { setPermalink(); load(); });
                 node.querySelector('#btn-prev-day').addEventListener('click', () => { dateInput.value = addDaysIso(dateInput.value || today(), -1); setPermalink(); load(); });
                 node.querySelector('#btn-next-day').addEventListener('click', () => { dateInput.value = addDaysIso(dateInput.value || today(), 1); setPermalink(); load(); });
 
@@ -867,7 +867,7 @@
         </div>
         <div class="spacer"></div>
         <div id="pub-msg" class="notice" style="display:none"></div>
-        <div id="pub-title" class="helper"></div>
+        <div id="pub-title" style="font-weight:600;font-size:16px;margin-bottom:6px"></div>
         <pre id="pub-content" style="white-space:pre-wrap;background:#0c121a;border:1px solid var(--border);padding:12px;border-radius:10px"></pre>
       </div>
     `);
@@ -875,36 +875,66 @@
                 const msg = node.querySelector('#pub-msg');
                 function setMsg(text, ok) { msg.textContent = text; msg.style.display = 'block'; msg.className = 'notice ' + (ok ? 'success' : 'error'); }
 
+                async function renderFromCacheOrFetch() {
+                    const cached = clientCache.publicByUser.get(username);
+                    if (cached && cached.byDate && cached.byDate[date] && cached.byDate[date].length) {
+                        const e = cached.byDate[date][0];
+                        node.querySelector('#pub-title').textContent = e.title || '';
+                        node.querySelector('#pub-content').textContent = e.content || '';
+                        setMsg('Public entry', true);
+                        return true;
+                    }
+                    return false;
+                }
+
                 (async function () {
                     setMsg('Loading…', true);
                     try {
-                        const res = await apiGet({ action: 'getDiaryEntry', username, date });
-                        if (res.success && res.entry) {
-                            node.querySelector('#pub-title').textContent = res.entry.title || '';
-                            node.querySelector('#pub-content').textContent = res.entry.content || '';
-                            setMsg('Public entry', true);
-                            // Staged background prefetch for this user (warm cache)
-                            if (!clientCache.publicByUser.has(username)) clientCache.publicByUser.set(username, { entries: [], byDate: {} });
-                            (async function prefetchAllPublic() {
-                                try {
-                                    const all = await apiGet({ action: 'getPublicDiaryEntries', username, limit: '500' });
-                                    if (all.success && Array.isArray(all.entries)) {
-                                        const store = { entries: all.entries, byDate: {} };
-                                        for (const e of all.entries) { const list = store.byDate[e.date] || (store.byDate[e.date] = []); list.push(e); }
-                                        clientCache.publicByUser.set(username, store);
-                                    }
-                                } catch (e) {}
-                            })();
-                        } else {
-                            setMsg(res.error || 'Not found or private', false);
+                        const servedFromCache = await renderFromCacheOrFetch();
+                        if (!servedFromCache) {
+                            const res = await apiGet({ action: 'getDiaryEntry', username, date });
+                            if (res.success && res.entry) {
+                                node.querySelector('#pub-title').textContent = res.entry.title || '';
+                                node.querySelector('#pub-content').textContent = res.entry.content || '';
+                                setMsg('Public entry', true);
+                            } else {
+                                setMsg(res.error || 'Not found or private', false);
+                            }
                         }
+                        if (!clientCache.publicByUser.has(username)) clientCache.publicByUser.set(username, { entries: [], byDate: {} });
+                        (async function prefetchAllPublic() {
+                            try {
+                                const monthStr = date.slice(0, 7);
+                                const month = await apiGet({ action: 'getPublicDiaryEntries', username, month: monthStr, maxContent: '220' });
+                                const storeExisting = clientCache.publicByUser.get(username) || { entries: [], byDate: {} };
+                                if (month.success && Array.isArray(month.entries)) {
+                                    for (const e of month.entries) { const list = storeExisting.byDate[e.date] || (storeExisting.byDate[e.date] = []); if (!list.find(x => x.date === e.date && x.title === e.title)) list.push(e); }
+                                    storeExisting.entries = storeExisting.entries.concat(month.entries);
+                                    clientCache.publicByUser.set(username, storeExisting);
+                                }
+                                const all = await apiGet({ action: 'getPublicDiaryEntries', username, limit: '500' });
+                                if (all.success && Array.isArray(all.entries)) {
+                                    const store = { entries: all.entries, byDate: {} };
+                                    for (const e of all.entries) { const list = store.byDate[e.date] || (store.byDate[e.date] = []); list.push(e); }
+                                    clientCache.publicByUser.set(username, store);
+                                    await renderFromCacheOrFetch();
+                                }
+                            } catch (e) {}
+                        })();
                     } catch (e) { setMsg(e.message, false); }
                 })();
 
                 // Prev/Next day navigation
-                const base = window.location.origin + basePath();
-                node.querySelector('#pub-prev').addEventListener('click', () => { const prev = addDaysIso(date, -1); window.location.href = base + '/' + encodeURIComponent(username) + '/' + toDisplayDate(prev); });
-                node.querySelector('#pub-next').addEventListener('click', () => { const next = addDaysIso(date, 1); window.location.href = base + '/' + encodeURIComponent(username) + '/' + toDisplayDate(next); });
+                node.querySelector('#pub-prev').addEventListener('click', () => {
+                    const prev = addDaysIso(date, -1);
+                    history.pushState({}, '', basePath() + '/' + encodeURIComponent(username) + '/' + toDisplayDate(prev));
+                    render();
+                });
+                node.querySelector('#pub-next').addEventListener('click', () => {
+                    const next = addDaysIso(date, 1);
+                    history.pushState({}, '', basePath() + '/' + encodeURIComponent(username) + '/' + toDisplayDate(next));
+                    render();
+                });
 
                 return node;
             }
@@ -934,8 +964,8 @@
 
                             const a = document.createElement('a');
                             a.className = 'link';
-                            a.href = `${basePath()}/${encodeURIComponent(e.username)}/${e.date}`;
-                            a.textContent = `${e.date} – ${e.username}: ${e.title || 'Untitled'}`;
+                            a.href = `${basePath()}/${encodeURIComponent(e.username)}/${toDisplayDate(e.date)}`;
+                            a.textContent = `${toDisplayDate(e.date)} – ${e.username}: ${e.title || 'Untitled'}`;
                             a.target = '_blank'; a.rel = 'noopener';
 
                             const preview = document.createElement('div');
