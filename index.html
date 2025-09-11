@@ -196,6 +196,12 @@
         .success {
             color: #bbf7d0
         }
+        .truncate {
+            display: block;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis
+        }
     </style>
 </head>
 
@@ -212,7 +218,7 @@
 
         <div id="route-view"></div>
 
-        <div class="footer">Built on Google Sheets · <span class="kbd">/Username/YYYY-MM-DD</span> for public links
+        <div class="footer">Make By PEPSEALSEA ©2025
         </div>
     </div>
 
@@ -262,6 +268,25 @@
                 return y + '-' + m + '-' + day; // local date, not UTC
             }
             function today() { return fmtDate(new Date()); }
+            function toDisplayDate(iso) {
+                // iso: YYYY-MM-DD -> DD-MM-YYYY
+                if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso || '';
+                const [y, m, d] = iso.split('-');
+                return d + '-' + m + '-' + y;
+            }
+            function toIsoDate(maybe) {
+                // Accept DD-MM-YYYY or YYYY-MM-DD and normalize to ISO
+                if (!maybe) return '';
+                if (/^\d{4}-\d{2}-\d{2}$/.test(maybe)) return maybe;
+                const m = maybe.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+                if (m) return m[3] + '-' + m[2] + '-' + m[1];
+                return fmtDate(maybe);
+            }
+            function addDaysIso(iso, delta) {
+                const d = new Date(toIsoDate(iso));
+                d.setDate(d.getDate() + delta);
+                return fmtDate(d);
+            }
             function basePath() {
                 const segs = location.pathname.split('/').filter(Boolean);
                 return segs.length ? '/' + segs[0] : '';
@@ -302,8 +327,8 @@
                     return mount.appendChild(PublicList());
                 }
 
-                if (maybeUser && /^\d{4}-\d{2}-\d{2}$/.test(maybeDate)) {
-                    return mount.appendChild(PublicEntry(maybeUser, maybeDate));
+                if (maybeUser && /^(?:\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4})$/.test(maybeDate)) {
+                    return mount.appendChild(PublicEntry(maybeUser, toIsoDate(maybeDate)));
                 }
 
                 // Route: /:username → public calendar for that user
@@ -403,7 +428,7 @@
                 <h3>My Diary</h3>
                 <div class="helper">Logged in as <span class="badge">${user.username}</span></div>
               </div>
-              <div class="helper">Public: <span class="kbd">/${user.username}/YYYY-MM-DD</span></div>
+              <div class="helper">Public: <span class="kbd">/${user.username}/DD-MM-YYYY</span></div>
             </div>
             <div class="spacer"></div>
             <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
@@ -414,6 +439,11 @@
             <div id="section-editor">
             <label>Date</label>
             <input id="diary-date" type="date" value="${today()}" />
+            <div class="spacer" style="height:8px"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button id="btn-prev-day" class="ghost">Prev day</button>
+              <button id="btn-next-day" class="ghost">Next day</button>
+            </div>
             <div class="spacer"></div>
             <label>Title</label>
             <input id="diary-title" placeholder="Optional title" />
@@ -428,7 +458,6 @@
             </select>
             <div class="spacer"></div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <button id="btn-load">Load</button>
               <button id="btn-save">Save</button>
               <button id="btn-update" class="ghost">Update</button>
               <button id="btn-delete" class="danger">Delete</button>
@@ -474,7 +503,8 @@
                 function setPermalink() {
                     const d = dateInput.value || today();
                     const base = window.location.origin + basePath();
-                    permalink.href = base + '/' + encodeURIComponent(user.username) + '/' + d + '#public';
+                    const display = toDisplayDate(d);
+                    permalink.href = base + '/' + encodeURIComponent(user.username) + '/' + display + '#public';
                     permalink.textContent = permalink.href;
                 }
                 setPermalink();
@@ -487,6 +517,10 @@
 
                 // Edit mode toggle (read-only by default)
                 let editMode = false;
+                let currentHasEntry = false;
+                let lastSavedSnapshot = { title: '', content: '', isPrivate: 'false', date: dateInput.value };
+                let autosaveTimer = null;
+                let autosaveInFlight = false;
                 function applyEditMode() {
                     const disabled = !editMode;
                     titleInput.disabled = disabled;
@@ -497,9 +531,45 @@
                     q('#btn-update', node).style.display = editMode ? '' : 'none';
                     q('#btn-delete', node).style.display = editMode ? '' : 'none';
                     btnEdit.textContent = editMode ? 'Done' : 'Edit';
+                    if (editMode) {
+                        if (!autosaveTimer) autosaveTimer = setInterval(tryAutoSave, 5000);
+                    } else {
+                        if (autosaveTimer) { clearInterval(autosaveTimer); autosaveTimer = null; }
+                    }
                 }
-                btnEdit.addEventListener('click', () => { editMode = !editMode; applyEditMode(); });
+                btnEdit.addEventListener('click', async () => {
+                    const wasEditing = editMode;
+                    editMode = !editMode;
+                    if (wasEditing && !editMode) {
+                        await tryAutoSave(true);
+                    }
+                    applyEditMode();
+                });
                 applyEditMode();
+
+                function isDirty() {
+                    return (
+                        lastSavedSnapshot.title !== titleInput.value ||
+                        lastSavedSnapshot.content !== contentInput.value ||
+                        String(lastSavedSnapshot.isPrivate) !== String(privacySelect.value) ||
+                        lastSavedSnapshot.date !== (dateInput.value || today())
+                    );
+                }
+
+                async function tryAutoSave(force) {
+                    if (autosaveInFlight) return;
+                    if (!force && !editMode) return;
+                    if (!force && !isDirty()) return;
+                    const hasContent = (contentInput.value || '').trim().length > 0;
+                    if (!hasContent) return;
+                    autosaveInFlight = true;
+                    try {
+                        if (currentHasEntry) { await update(); } else { await save(); currentHasEntry = true; }
+                        lastSavedSnapshot = { title: titleInput.value, content: contentInput.value, isPrivate: privacySelect.value, date: dateInput.value || today() };
+                    } finally {
+                        autosaveInFlight = false;
+                    }
+                }
 
                 // Calendar
                 let calYear = new Date().getFullYear();
@@ -558,7 +628,7 @@
                         const list = entriesByDate[dstr] || [];
                         const count = list.length;
                         if (count > 0) {
-                            const a = document.createElement('a'); a.className = 'link'; a.href = `${basePath()}/${encodeURIComponent(user.username)}/${dstr}`; a.target = '_blank'; a.rel = 'noopener';
+                            const a = document.createElement('a'); a.className = 'link truncate'; a.href = `${basePath()}/${encodeURIComponent(user.username)}/${toDisplayDate(dstr)}`; a.target = '_blank'; a.rel = 'noopener';
                             const first = list[0];
                             a.textContent = (first.title || 'Untitled') + (first.isPrivate ? ' (private)' : '');
                             const p = document.createElement('div'); p.style.marginTop = '6px'; p.appendChild(a); cell.appendChild(p);
@@ -590,8 +660,8 @@
 
                                 const a = document.createElement('a');
                                 a.className = 'link';
-                                a.href = `${basePath()}/${encodeURIComponent(user.username)}/${e.date}`;
-                                a.textContent = `${e.date} — ${e.title || 'Untitled'} ${e.isPrivate ? '(private)' : ''}`;
+                                a.href = `${basePath()}/${encodeURIComponent(user.username)}/${toDisplayDate(e.date)}`;
+                                a.textContent = `${toDisplayDate(e.date)} — ${e.title || 'Untitled'} ${e.isPrivate ? '(private)' : ''}`;
                                 a.target = '_blank'; a.rel = 'noopener';
 
                                 const preview = document.createElement('div');
@@ -619,8 +689,8 @@
 
                             const a = document.createElement('a');
                             a.className = 'link';
-                            a.href = `${basePath()}/${encodeURIComponent(user.username)}/${e.date}`;
-                            a.textContent = `${e.date} — ${e.title || 'Untitled'} ${e.isPrivate ? '(private)' : ''}`;
+                            a.href = `${basePath()}/${encodeURIComponent(user.username)}/${toDisplayDate(e.date)}`;
+                            a.textContent = `${toDisplayDate(e.date)} — ${e.title || 'Untitled'} ${e.isPrivate ? '(private)' : ''}`;
                             a.target = '_blank'; a.rel = 'noopener';
 
                             const preview = document.createElement('div');
@@ -643,20 +713,21 @@
                         const d = dateInput.value || today();
                         // Use private/self endpoint first
                         let ok = false;
+                        currentHasEntry = false;
                         // If cache has the entry, use it
                         if (clientCache.userLoadedAll && clientCache.userEntriesByDate[d] && clientCache.userEntriesByDate[d].length > 0) {
                             const ownEntry = clientCache.userEntriesByDate[d][0];
                             titleInput.value = ownEntry.title || '';
                             contentInput.value = ownEntry.content || '';
                             privacySelect.value = String(!!ownEntry.isPrivate);
-                            ok = true;
+                            ok = true; currentHasEntry = true;
                         } else {
                             const own = await apiGet({ action: 'getUserDiaryEntry', userId: user.id, date: d });
                             if (own.success && own.entry) {
                                 titleInput.value = own.entry.title || '';
                                 contentInput.value = own.entry.content || '';
                                 privacySelect.value = String(!!own.entry.isPrivate);
-                                ok = true;
+                                ok = true; currentHasEntry = true;
                             } else {
                                 // Fallback to public view if this date is public and username/date requested directly
                                 try {
@@ -669,7 +740,8 @@
                                 } catch (e) { }
                             }
                         }
-                        if (ok) setMsg('Loaded entry for ' + d, true);
+                        lastSavedSnapshot = { title: titleInput.value, content: contentInput.value, isPrivate: privacySelect.value, date: d };
+                        if (ok) setMsg('Loaded entry for ' + toDisplayDate(d), true);
                         else { titleInput.value = ''; contentInput.value = ''; setMsg('No entry for ' + d, false); }
                     } catch (e) { setMsg(e.message, false); }
                 }
@@ -694,6 +766,7 @@
                             clientCache.userEntries.unshift(entry);
                             clientCache.userLoadedAll = true;
                             clientCache.userEntriesByDate[payload.date] = [entry];
+                            currentHasEntry = true;
                             // re-render dependents
                             renderCalendar();
                             loadRecent();
@@ -739,6 +812,7 @@
                             const d = dateInput.value || today();
                             if (Array.isArray(clientCache.userEntries)) { clientCache.userEntries = clientCache.userEntries.filter(e => e.date !== d); }
                             delete clientCache.userEntriesByDate[d];
+                            currentHasEntry = false;
                             renderCalendar();
                             loadRecent();
                         }
@@ -746,11 +820,12 @@
                     } catch (e) { setMsg(e.message, false); }
                 }
 
-                node.querySelector('#btn-load').addEventListener('click', load);
                 node.querySelector('#btn-save').addEventListener('click', save);
                 node.querySelector('#btn-update').addEventListener('click', update);
                 node.querySelector('#btn-delete').addEventListener('click', remove);
                 dateInput.addEventListener('change', setPermalink);
+                node.querySelector('#btn-prev-day').addEventListener('click', () => { dateInput.value = addDaysIso(dateInput.value || today(), -1); setPermalink(); load(); });
+                node.querySelector('#btn-next-day').addEventListener('click', () => { dateInput.value = addDaysIso(dateInput.value || today(), 1); setPermalink(); load(); });
 
                 // Initial quick load of today's entry in view mode
                 setMsg('Loading…', true);
@@ -784,7 +859,12 @@
                 const node = el(`
       <div class="card">
         <h3>Public diary</h3>
-        <div class="helper">${username} · ${date}</div>
+        <div class="helper">${username} · ${toDisplayDate(date)}</div>
+        <div class="spacer"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button id="pub-prev" class="ghost">Prev day</button>
+          <button id="pub-next" class="ghost">Next day</button>
+        </div>
         <div class="spacer"></div>
         <div id="pub-msg" class="notice" style="display:none"></div>
         <div id="pub-title" class="helper"></div>
@@ -820,6 +900,11 @@
                         }
                     } catch (e) { setMsg(e.message, false); }
                 })();
+
+                // Prev/Next day navigation
+                const base = window.location.origin + basePath();
+                node.querySelector('#pub-prev').addEventListener('click', () => { const prev = addDaysIso(date, -1); window.location.href = base + '/' + encodeURIComponent(username) + '/' + toDisplayDate(prev); });
+                node.querySelector('#pub-next').addEventListener('click', () => { const next = addDaysIso(date, 1); window.location.href = base + '/' + encodeURIComponent(username) + '/' + toDisplayDate(next); });
 
                 return node;
             }
@@ -883,6 +968,8 @@
           <button id="cal-next" class="ghost">Next</button>
         </div>
         <div id="calendar"></div>
+        <div class="spacer"></div>
+        <div id="month-strip"></div>
       </div>
     `);
 
@@ -965,7 +1052,7 @@
                         const list = entriesByDate[dstr] || [];
                         const count = list.length;
                         if (count > 0) {
-                            const a = document.createElement('a'); a.className = 'link'; a.href = `${basePath()}/${encodeURIComponent(username)}/${dstr}`; a.target = '_blank'; a.rel = 'noopener';
+                            const a = document.createElement('a'); a.className = 'link truncate'; a.href = `${basePath()}/${encodeURIComponent(username)}/${toDisplayDate(dstr)}`; a.target = '_blank'; a.rel = 'noopener';
                             const first = list[0];
                             a.textContent = (first.title || 'Untitled');
                             const p = document.createElement('div'); p.style.marginTop = '6px'; p.appendChild(a); cell.appendChild(p);
@@ -975,10 +1062,32 @@
                         } else {
                             const p = document.createElement('div'); p.className = 'helper'; p.style.marginTop = '6px'; p.textContent = '—'; cell.appendChild(p);
                         }
-                        cell.addEventListener('click', () => { window.open(`${basePath()}/${encodeURIComponent(username)}/${dstr}`, '_blank'); });
+                        cell.addEventListener('click', () => { window.open(`${basePath()}/${encodeURIComponent(username)}/${toDisplayDate(dstr)}`, '_blank'); });
                         grid.appendChild(cell);
                     }
                     calHost.appendChild(grid);
+
+                    // Month strip (narrow bar showing daily availability)
+                    const strip = node.querySelector('#month-strip');
+                    strip.innerHTML = '';
+                    const stripGrid = document.createElement('div');
+                    stripGrid.style.display = 'grid';
+                    stripGrid.style.gridTemplateColumns = `repeat(${daysInMonth},1fr)`;
+                    stripGrid.style.gap = '2px';
+                    stripGrid.style.alignItems = 'stretch';
+                    for (let day = 1; day <= daysInMonth; day++) {
+                        const dstr = String(calYear) + '-' + String(calMonth + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+                        const bar = document.createElement('div');
+                        const has = (entriesByDate[dstr] || []).length > 0;
+                        bar.style.height = '6px';
+                        bar.style.borderRadius = '4px';
+                        bar.style.background = has ? 'var(--accent)' : 'var(--border)';
+                        bar.title = toDisplayDate(dstr);
+                        bar.style.cursor = 'pointer';
+                        bar.addEventListener('click', () => { window.open(`${basePath()}/${encodeURIComponent(username)}/${toDisplayDate(dstr)}`, '_blank'); });
+                        stripGrid.appendChild(bar);
+                    }
+                    strip.appendChild(stripGrid);
                 }
 
                 renderCalendar();
