@@ -282,7 +282,8 @@
                 userEntries: null, // Array of all entries for logged-in user
                 userEntriesByDate: {}, // date -> entries[]
                 userLoadedAll: false,
-                publicByUser: new Map(), // username -> {entries: [], byDate: {}}
+                userEmptyDates: new Set(), // dates confirmed to have no private entry
+                publicByUser: new Map(), // username -> {entries: [], byDate: {}, emptyDates: Set}
             };
             function fmtDate(d) {
                 const x = new Date(d);
@@ -485,6 +486,7 @@
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <button id="btn-prev-day" class="ghost">Prev day</button>
               <button id="btn-next-day" class="ghost">Next day</button>
+              <button id="btn-refresh" class="ghost">Refresh</button>
             </div>
             <div class="spacer"></div>
             <label>Title</label>
@@ -538,6 +540,7 @@
                 const secEditor = node.querySelector('#section-editor');
                 const secCalendar = node.querySelector('#section-calendar');
                 const btnEdit = node.querySelector('#btn-edit');
+                const btnRefresh = node.querySelector('#btn-refresh');
 
                 function setMsg(text, ok) { msg.textContent = text; msg.style.display = 'block'; msg.className = 'notice ' + (ok ? 'success' : 'error'); }
                 function clearMsg() { msg.textContent = ''; msg.style.display = 'none'; }
@@ -751,10 +754,21 @@
                     } catch (e) { const wrap = node.querySelector('#recent-list'); wrap.textContent = e.message; }
                 }
 
-                async function load() {
+                let currentLoadSeq = 0;
+                async function load(force) {
                     clearMsg();
                     try {
                         const d = dateInput.value || today();
+                        const seq = ++currentLoadSeq;
+                        if (!force && clientCache.userEmptyDates && clientCache.userEmptyDates.has(d)) {
+                            titleInput.value = '';
+                            contentInput.value = '';
+                            privacySelect.value = 'false';
+                            currentHasEntry = false;
+                            lastSavedSnapshot = { title: '', content: '', isPrivate: 'false', date: d };
+                            setMsg('No entry for ' + toDisplayDate(d), false);
+                            return;
+                        }
                         // Use private/self endpoint first
                         let ok = false;
                         currentHasEntry = false;
@@ -784,9 +798,19 @@
                                 } catch (e) { }
                             }
                         }
+                        if (seq !== currentLoadSeq) return; // ignore stale response
                         lastSavedSnapshot = { title: titleInput.value, content: contentInput.value, isPrivate: privacySelect.value, date: d };
-                        if (ok) setMsg('Loaded entry for ' + toDisplayDate(d), true);
-                        else { titleInput.value = ''; contentInput.value = ''; setMsg('No entry for ' + toDisplayDate(d), false); }
+                        if (ok) {
+                            setMsg('Loaded entry for ' + toDisplayDate(d), true);
+                            if (clientCache.userEmptyDates) clientCache.userEmptyDates.delete(d);
+                        }
+                        else {
+                            titleInput.value = '';
+                            contentInput.value = '';
+                            privacySelect.value = 'false';
+                            if (clientCache.userEmptyDates) clientCache.userEmptyDates.add(d);
+                            setMsg('No entry for ' + toDisplayDate(d), false);
+                        }
                     } catch (e) { setMsg(e.message, false); }
                 }
 
@@ -810,6 +834,7 @@
                             clientCache.userEntries.unshift(entry);
                             clientCache.userLoadedAll = true;
                             clientCache.userEntriesByDate[payload.date] = [entry];
+                            if (clientCache.userEmptyDates) clientCache.userEmptyDates.delete(payload.date);
                             currentHasEntry = true;
                             // re-render dependents
                             renderCalendar();
@@ -838,6 +863,7 @@
                                 for (const e of clientCache.userEntries) { if (e.date === payload.date) { e.title = payload.title; e.content = payload.content; e.isPrivate = payload.isPrivate === 'true' || payload.isPrivate === true; break; } }
                             }
                             clientCache.userEntriesByDate[payload.date] = [{ date: payload.date, title: payload.title, content: payload.content, isPrivate: payload.isPrivate === 'true' || payload.isPrivate === true }];
+                            if (clientCache.userEmptyDates) clientCache.userEmptyDates.delete(payload.date);
                             renderCalendar();
                             loadRecent();
                         }
@@ -856,6 +882,7 @@
                             const d = dateInput.value || today();
                             if (Array.isArray(clientCache.userEntries)) { clientCache.userEntries = clientCache.userEntries.filter(e => e.date !== d); }
                             delete clientCache.userEntriesByDate[d];
+                            if (clientCache.userEmptyDates) clientCache.userEmptyDates.add(d);
                             currentHasEntry = false;
                             renderCalendar();
                             loadRecent();
@@ -867,13 +894,14 @@
                 node.querySelector('#btn-save').addEventListener('click', save);
                 node.querySelector('#btn-update').addEventListener('click', update);
                 node.querySelector('#btn-delete').addEventListener('click', remove);
-                dateInput.addEventListener('change', () => { setPermalink(); load(); });
-                node.querySelector('#btn-prev-day').addEventListener('click', () => { dateInput.value = addDaysIso(dateInput.value || today(), -1); setPermalink(); load(); });
-                node.querySelector('#btn-next-day').addEventListener('click', () => { dateInput.value = addDaysIso(dateInput.value || today(), 1); setPermalink(); load(); });
+                dateInput.addEventListener('change', () => { setPermalink(); load(false); });
+                node.querySelector('#btn-prev-day').addEventListener('click', () => { dateInput.value = addDaysIso(dateInput.value || today(), -1); setPermalink(); load(false); });
+                node.querySelector('#btn-next-day').addEventListener('click', () => { dateInput.value = addDaysIso(dateInput.value || today(), 1); setPermalink(); load(false); });
+                btnRefresh.addEventListener('click', () => { load(true); });
 
                 // Initial quick load of today's entry in view mode
                 setMsg('Loading…', true);
-                load().finally(() => { applyEditMode(); hideOverlay(); });
+                load(false).finally(() => { applyEditMode(); hideOverlay(); });
 
                 // Prefetch all user entries once in background
                 (async function prefetchAll() {
@@ -908,6 +936,7 @@
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button id="pub-prev" class="ghost">Prev day</button>
           <button id="pub-next" class="ghost">Next day</button>
+          <button id="pub-refresh" class="ghost">Refresh</button>
         </div>
         <div class="spacer"></div>
         <div id="pub-msg" class="notice" style="display:none"></div>
@@ -918,9 +947,16 @@
 
                 const msg = node.querySelector('#pub-msg');
                 function setMsg(text, ok) { msg.textContent = text; msg.style.display = 'block'; msg.className = 'notice ' + (ok ? 'success' : 'error'); }
+                let currentLoadSeq = 0;
 
-                async function renderFromCacheOrFetch() {
+                async function renderFromCacheOrFetch(force) {
                     const cached = clientCache.publicByUser.get(username);
+                    if (!force && cached && cached.emptyDates instanceof Set && cached.emptyDates.has(date)) {
+                        node.querySelector('#pub-title').textContent = '';
+                        node.querySelector('#pub-content').textContent = '';
+                        setMsg('Not found or private', false);
+                        return true;
+                    }
                     if (cached && cached.byDate && cached.byDate[date] && cached.byDate[date].length) {
                         const e = cached.byDate[date][0];
                         node.querySelector('#pub-title').textContent = e.title || '';
@@ -931,27 +967,34 @@
                     return false;
                 }
 
-                (async function () {
+                async function loadPublic(force) {
+                    const seq = ++currentLoadSeq;
                     setMsg('Loading…', true);
                     try {
-                        const servedFromCache = await renderFromCacheOrFetch();
+                        const servedFromCache = await renderFromCacheOrFetch(force);
                         if (!servedFromCache) {
                             const res = await apiGet({ action: 'getDiaryEntry', username, date });
+                            if (seq !== currentLoadSeq) return; // ignore stale
                             if (res.success && res.entry) {
                                 node.querySelector('#pub-title').textContent = res.entry.title || '';
                                 node.querySelector('#pub-content').textContent = res.entry.content || '';
                                 setMsg('Public entry', true);
                             } else {
                                 setMsg(res.error || 'Not found or private', false);
+                                const existing = clientCache.publicByUser.get(username) || { entries: [], byDate: {}, emptyDates: new Set() };
+                                if (!(existing.emptyDates instanceof Set)) existing.emptyDates = new Set();
+                                existing.emptyDates.add(date);
+                                clientCache.publicByUser.set(username, existing);
                             }
                         }
                         hideOverlay();
-                        if (!clientCache.publicByUser.has(username)) clientCache.publicByUser.set(username, { entries: [], byDate: {} });
+                        if (!clientCache.publicByUser.has(username)) clientCache.publicByUser.set(username, { entries: [], byDate: {}, emptyDates: new Set() });
                         (async function prefetchAllPublic() {
                             try {
                                 const monthStr = date.slice(0, 7);
                                 const month = await apiGet({ action: 'getPublicDiaryEntries', username, month: monthStr, maxContent: '220' });
-                                const storeExisting = clientCache.publicByUser.get(username) || { entries: [], byDate: {} };
+                                const storeExisting = clientCache.publicByUser.get(username) || { entries: [], byDate: {}, emptyDates: new Set() };
+                                if (!(storeExisting.emptyDates instanceof Set)) storeExisting.emptyDates = new Set();
                                 if (month.success && Array.isArray(month.entries)) {
                                     for (const e of month.entries) { const list = storeExisting.byDate[e.date] || (storeExisting.byDate[e.date] = []); if (!list.find(x => x.date === e.date && x.title === e.title)) list.push(e); }
                                     storeExisting.entries = storeExisting.entries.concat(month.entries);
@@ -959,15 +1002,17 @@
                                 }
                                 const all = await apiGet({ action: 'getPublicDiaryEntries', username, limit: '500' });
                                 if (all.success && Array.isArray(all.entries)) {
-                                    const store = { entries: all.entries, byDate: {} };
+                                    const store = { entries: all.entries, byDate: {}, emptyDates: storeExisting.emptyDates };
                                     for (const e of all.entries) { const list = store.byDate[e.date] || (store.byDate[e.date] = []); list.push(e); }
                                     clientCache.publicByUser.set(username, store);
-                                    await renderFromCacheOrFetch();
+                                    await renderFromCacheOrFetch(false);
                                 }
                             } catch (e) {}
                         })();
                     } catch (e) { setMsg(e.message, false); hideOverlay(); }
-                })();
+                }
+
+                loadPublic(false);
 
                 // Prev/Next day navigation
                 node.querySelector('#pub-prev').addEventListener('click', () => {
@@ -980,6 +1025,7 @@
                     history.pushState({}, '', basePath() + '/' + encodeURIComponent(username) + '/' + toDisplayDate(next));
                     render();
                 });
+                node.querySelector('#pub-refresh').addEventListener('click', () => { loadPublic(true); });
 
                 return node;
             }
