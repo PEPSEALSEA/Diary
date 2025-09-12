@@ -196,12 +196,14 @@
         .success {
             color: #bbf7d0
         }
+
         .truncate {
             display: block;
             overflow: hidden;
             white-space: nowrap;
             text-overflow: ellipsis
         }
+
         #app-overlay {
             position: fixed;
             inset: 0;
@@ -211,6 +213,7 @@
             color: var(--text);
             z-index: 9999
         }
+
         #app-overlay .box {
             background: linear-gradient(180deg, var(--panel), var(--panel-2));
             border: 1px solid var(--border);
@@ -218,7 +221,7 @@
             padding: 20px 24px;
             min-width: 260px;
             text-align: center;
-            box-shadow: 0 10px 30px rgba(0,0,0,.5)
+            box-shadow: 0 10px 30px rgba(0, 0, 0, .5)
         }
     </style>
 </head>
@@ -760,6 +763,11 @@
                     try {
                         const d = dateInput.value || today();
                         const seq = ++currentLoadSeq;
+                        // Clear fields immediately on date switch to avoid showing stale content
+                        titleInput.value = '';
+                        contentInput.value = '';
+                        privacySelect.value = 'false';
+                        currentHasEntry = false;
                         if (!force && clientCache.userEmptyDates && clientCache.userEmptyDates.has(d)) {
                             titleInput.value = '';
                             contentInput.value = '';
@@ -1007,7 +1015,7 @@
                                     clientCache.publicByUser.set(username, store);
                                     await renderFromCacheOrFetch(false);
                                 }
-                            } catch (e) {}
+                            } catch (e) { }
                         })();
                     } catch (e) { setMsg(e.message, false); hideOverlay(); }
                 }
@@ -1132,7 +1140,7 @@
                                 // re-render current month with full data once ready
                                 renderCalendar();
                             }
-                        } catch (e) {}
+                        } catch (e) { }
                     })();
                     return publicEntries;
                 }
