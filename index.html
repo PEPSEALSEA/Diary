@@ -512,6 +512,9 @@
             </div>
             <div class="spacer"></div>
             <div id="dash-msg" class="notice" style="display:none"></div>
+            <div id="autosave-indicator" class="helper" style="display:none;color:var(--accent-2);font-size:11px;margin-top:8px;">
+              <span id="autosave-status">Auto-save active</span>
+            </div>
             </div>
             <div id="section-calendar" style="display:none">
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
@@ -569,6 +572,8 @@
                 let lastSavedSnapshot = { title: '', content: '', isPrivate: 'false', date: dateInput.value };
                 let autosaveTimer = null;
                 let autosaveInFlight = false;
+                let lastAutosaveTime = null;
+                let statusUpdateTimer = null;
                 function applyEditMode() {
                     const disabled = !editMode;
                     titleInput.disabled = disabled;
@@ -579,10 +584,17 @@
                     q('#btn-update', node).style.display = editMode ? '' : 'none';
                     q('#btn-delete', node).style.display = editMode ? '' : 'none';
                     btnEdit.textContent = editMode ? 'Done' : 'Edit';
+                    
+                    // Show/hide autosave indicator
+                    const autosaveIndicator = q('#autosave-indicator', node);
                     if (editMode) {
+                        autosaveIndicator.style.display = 'block';
                         if (!autosaveTimer) autosaveTimer = setInterval(tryAutoSave, 5000);
+                        if (!statusUpdateTimer) statusUpdateTimer = setInterval(updateAutosaveStatus, 1000);
                     } else {
+                        autosaveIndicator.style.display = 'none';
                         if (autosaveTimer) { clearInterval(autosaveTimer); autosaveTimer = null; }
+                        if (statusUpdateTimer) { clearInterval(statusUpdateTimer); statusUpdateTimer = null; }
                     }
                 }
                 btnEdit.addEventListener('click', async () => {
@@ -604,6 +616,20 @@
                     );
                 }
 
+                function updateAutosaveStatus() {
+                    const statusEl = q('#autosave-status', node);
+                    if (lastAutosaveTime) {
+                        const timeAgo = Math.floor((Date.now() - lastAutosaveTime) / 1000);
+                        if (timeAgo < 60) {
+                            statusEl.textContent = `Auto-saved ${timeAgo}s ago`;
+                        } else {
+                            statusEl.textContent = `Auto-saved ${Math.floor(timeAgo / 60)}m ago`;
+                        }
+                    } else {
+                        statusEl.textContent = 'Auto-save active';
+                    }
+                }
+
                 async function tryAutoSave(force) {
                     if (autosaveInFlight) return;
                     if (!force && !editMode) return;
@@ -612,8 +638,19 @@
                     if (!hasContent) return;
                     autosaveInFlight = true;
                     try {
-                        if (currentHasEntry) { await update(); } else { await save(); currentHasEntry = true; }
+                        if (currentHasEntry) { 
+                            await update(); 
+                            if (force) setMsg('Auto-saved at ' + new Date().toLocaleTimeString(), true);
+                        } else { 
+                            await save(); 
+                            currentHasEntry = true; 
+                            if (force) setMsg('Auto-saved at ' + new Date().toLocaleTimeString(), true);
+                        }
                         lastSavedSnapshot = { title: titleInput.value, content: contentInput.value, isPrivate: privacySelect.value, date: dateInput.value || today() };
+                        lastAutosaveTime = Date.now();
+                        updateAutosaveStatus();
+                    } catch (e) {
+                        if (force) setMsg('Auto-save failed: ' + e.message, false);
                     } finally {
                         autosaveInFlight = false;
                     }
@@ -912,6 +949,17 @@
                 node.querySelector('#btn-prev-day').addEventListener('click', () => { dateInput.value = addDaysIso(dateInput.value || today(), -1); setPermalink(); load(false); });
                 node.querySelector('#btn-next-day').addEventListener('click', () => { dateInput.value = addDaysIso(dateInput.value || today(), 1); setPermalink(); load(false); });
                 btnRefresh.addEventListener('click', () => { load(true); });
+
+                // Page unload protection - save before leaving
+                window.addEventListener('beforeunload', (e) => {
+                    if (editMode && isDirty()) {
+                        e.preventDefault();
+                        e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
+                        // Try to save synchronously (this might not work in all browsers)
+                        tryAutoSave(true);
+                        return e.returnValue;
+                    }
+                });
 
                 // Initial quick load of today's entry in view mode
                 setMsg('Loading…', true);
