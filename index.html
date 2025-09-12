@@ -671,6 +671,10 @@
                         cell.style.borderRadius = '10px';
                         cell.style.padding = '8px';
                         cell.style.minHeight = '72px';
+                        cell.style.height = '96px';
+                        cell.style.overflow = 'hidden';
+                        cell.style.display = 'flex';
+                        cell.style.flexDirection = 'column';
                         cell.style.background = 'var(--input)';
                         const head = document.createElement('div'); head.className = 'helper'; head.textContent = day; cell.appendChild(head);
                         const list = entriesByDate[dstr] || [];
@@ -679,6 +683,8 @@
                             const a = document.createElement('a'); a.className = 'link truncate'; a.href = `${basePath()}/${encodeURIComponent(user.username)}/${toDisplayDate(dstr)}`; a.target = '_blank'; a.rel = 'noopener';
                             const first = list[0];
                             a.textContent = (first.title || 'Untitled') + (first.isPrivate ? ' (private)' : '');
+                            a.title = (first.title || 'Untitled') + (first.isPrivate ? ' (private)' : '');
+                            try { cell.title = list.map(e => (e.title || 'Untitled') + (e.isPrivate ? ' (private)' : '')).join('\n'); } catch (e) {}
                             const p = document.createElement('div'); p.style.marginTop = '6px'; p.appendChild(a); cell.appendChild(p);
                             const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = String(count);
                             badge.style.float = 'right';
@@ -1176,6 +1182,10 @@
                         cell.style.borderRadius = '10px';
                         cell.style.padding = '8px';
                         cell.style.minHeight = '72px';
+                        cell.style.height = '96px';
+                        cell.style.overflow = 'hidden';
+                        cell.style.display = 'flex';
+                        cell.style.flexDirection = 'column';
                         cell.style.background = 'var(--input)';
                         const head = document.createElement('div'); head.className = 'helper'; head.textContent = day; cell.appendChild(head);
                         const list = entriesByDate[dstr] || [];
@@ -1184,6 +1194,8 @@
                             const a = document.createElement('a'); a.className = 'link truncate'; a.href = `${basePath()}/${encodeURIComponent(username)}/${toDisplayDate(dstr)}`; a.target = '_blank'; a.rel = 'noopener';
                             const first = list[0];
                             a.textContent = (first.title || 'Untitled');
+                            a.title = (first.title || 'Untitled');
+                            try { cell.title = list.map(e => (e.title || 'Untitled')).join('\n'); } catch (e) {}
                             const p = document.createElement('div'); p.style.marginTop = '6px'; p.appendChild(a); cell.appendChild(p);
                             const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = String(count);
                             badge.style.float = 'right';
@@ -1217,6 +1229,9 @@
                         stripGrid.appendChild(bar);
                     }
                     strip.appendChild(stripGrid);
+
+                    // Hide overlay after first calendar paint for public user calendar
+                    hideOverlay();
                 }
 
                 renderCalendar();
