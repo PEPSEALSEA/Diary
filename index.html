@@ -419,6 +419,7 @@
             }
             function privacyIcon(p) {
                 const v = String(p || '').toLowerCase();
+                if (v === 'public') return '🌐';
                 if (v === 'friend') return '★';
                 if (v === 'private') return '🔒';
                 return '';
@@ -975,7 +976,7 @@
                         } else {
                             const p = document.createElement('div'); p.className = 'helper'; p.style.marginTop = '6px'; p.textContent = '—'; cell.appendChild(p);
                         }
-                        cell.addEventListener('click', () => { dateInput.value = dstr; showEditor(); setPermalink(); });
+                        cell.addEventListener('click', () => { dateInput.value = dstr; showEditor(); setPermalink(); load(false); });
                         grid.appendChild(cell);
                     }
                     calHost.appendChild(grid);
