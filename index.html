@@ -274,6 +274,11 @@
         #auth-modal .auth-close { background: transparent; border: 1px solid var(--border); color: var(--text); padding: 6px 10px; border-radius: 8px; cursor: pointer; }
         #auth-modal .auth-switch { display:flex; gap:8px; align-items:center; justify-content:center; margin-top: 8px; }
         #auth-modal .auth-switch a { cursor: pointer; color: var(--accent-2); text-decoration: none; }
+        /* User menu */
+        #user-menu { position: absolute; right: 24px; top: 56px; display: none; min-width: 220px; background: linear-gradient(180deg, var(--panel), var(--panel-2)); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.35); z-index: 1000; }
+        #user-menu .item { padding: 10px 12px; color: var(--text); text-decoration: none; display: block; cursor: pointer; }
+        #user-menu .item:hover { background: #0c1320; }
+        #user-menu .muted { color: var(--muted); font-size: 12px; }
     </style>
 </head>
 
@@ -285,7 +290,7 @@
                 <a id="nav-home" href="#">Home</a>
                 <a id="nav-public" href="#public">Public</a>
                 <a id="nav-login" href="#" style="display:none">Login</a>
-                <a id="nav-logout" href="#" style="display:none">Logout</a>
+                <a id="nav-user" href="#" style="display:none"></a>
             </div>
         </div>
 
@@ -340,6 +345,11 @@
                 </div>
             </div>
         </div>
+    </div>
+    <div id="user-menu" role="menu" aria-hidden="true">
+        <div class="item" id="menu-friends">Friends</div>
+        <div class="item" id="menu-logout">Logout</div>
+        <div class="item muted" id="menu-last-online" style="display:none"></div>
     </div>
 
     <script>
@@ -486,12 +496,12 @@
 
             function updateNavVisibility() {
                 const nl = q('#nav-login');
-                const lo = q('#nav-logout');
+                const nu = q('#nav-user');
                 if (auth.user) {
                     if (nl) nl.style.display = 'none';
-                    if (lo) lo.style.display = 'inline';
+                    if (nu) { nu.style.display = 'inline'; nu.textContent = auth.user.username; }
                 } else {
-                    if (lo) lo.style.display = 'none';
+                    if (nu) nu.style.display = 'none';
                     if (nl) nl.style.display = 'inline';
                 }
             }
@@ -635,6 +645,12 @@
                     msg.textContent = '';
                     showOverlay('Creating account…', 'Please wait');
                     try {
+                        if (username.length < 5 || username.length > 20) {
+                            msg.textContent = 'Username must be 5-20 characters';
+                            msg.className = 'helper error';
+                            hideOverlay();
+                            return;
+                        }
                         const res = await apiPost({ action: 'register', email, username, password });
                         if (res.success) {
                             msg.textContent = 'Registered. You can now login.';
@@ -1599,10 +1615,78 @@
                 return node;
             }
 
-            q('#nav-logout').addEventListener('click', (e) => { e.preventDefault(); auth.user = null; render(); });
             const navLogin = q('#nav-login');
             if (navLogin) {
                 navLogin.addEventListener('click', (e) => { e.preventDefault(); openAuthModal('login'); });
+            }
+            const navUser = q('#nav-user');
+            const userMenu = q('#user-menu');
+            function toggleUserMenu(show) {
+                if (!userMenu) return;
+                userMenu.style.display = show ? 'block' : 'none';
+                if (show) {
+                    const last = storage.get('diary_last_seen');
+                    const el = q('#menu-last-online');
+                    if (el) {
+                        if (last) { el.style.display = ''; el.textContent = 'Last online: ' + last; } else { el.style.display = 'none'; }
+                    }
+                }
+            }
+            if (navUser) {
+                navUser.addEventListener('click', (e) => { e.preventDefault(); toggleUserMenu(userMenu.style.display === 'none'); });
+            }
+            document.addEventListener('click', (e) => {
+                if (!userMenu) return;
+                const target = e.target;
+                const within = target === userMenu || userMenu.contains(target) || target === navUser;
+                if (!within) toggleUserMenu(false);
+            });
+            const menuLogout = q('#menu-logout'); if (menuLogout) menuLogout.addEventListener('click', (e) => { e.preventDefault(); auth.user = null; toggleUserMenu(false); render(); });
+            const menuFriends = q('#menu-friends'); if (menuFriends) menuFriends.addEventListener('click', (e) => { e.preventDefault(); toggleUserMenu(false); openFriendsModal(); });
+
+            // Friends modal
+            function openFriendsModal() {
+                const listEl = document.createElement('div');
+                listEl.className = 'helper';
+                showOverlay('Friends', 'Loading…');
+                (async () => {
+                    try {
+                        const res = await apiGet({ action: 'listFriends', ownerId: auth.user && auth.user.id });
+                        hideOverlay();
+                        const modal = q('#auth-modal');
+                        const title = q('#auth-modal-title');
+                        const body = q('#auth-modal-body');
+                        if (!modal || !title || !body) return;
+                        title.textContent = 'Friends';
+                        body.innerHTML = '';
+                        const host = document.createElement('div');
+                        if (!res.success || !Array.isArray(res.friends) || res.friends.length === 0) {
+                            const empty = document.createElement('div'); empty.className = 'helper'; empty.textContent = 'No friends yet.'; host.appendChild(empty);
+                        } else {
+                            res.friends.forEach(f => {
+                                const row = document.createElement('div');
+                                row.style.display = 'flex'; row.style.justifyContent = 'space-between'; row.style.alignItems = 'center'; row.style.marginBottom = '8px';
+                                const left = document.createElement('div'); left.className = 'helper';
+                                const name = f.friendUsername || f.friendEmail || f.friendUserId || '';
+                                const lastSeen = f.lastSeen ? new Date(f.lastSeen) : null;
+                                const isOnline = lastSeen && (Date.now() - new Date(lastSeen).getTime()) < 120000; // 2 minutes
+                                left.textContent = name + (isOnline ? ' • online' : (lastSeen ? (' • last: ' + new Date(lastSeen).toLocaleString()) : ''));
+                                const rem = document.createElement('button'); rem.className = 'danger'; rem.textContent = 'Remove';
+                                rem.addEventListener('click', async () => {
+                                    showOverlay('Removing friend…', 'Please wait');
+                                    try { await apiPost({ action: 'removeFriend', ownerId: auth.user && auth.user.id, friendIdentifier: f.friendUserId || f.friendEmail }); row.remove(); } catch (e) {}
+                                    finally { hideOverlay(); }
+                                });
+                                row.appendChild(left); row.appendChild(rem); host.appendChild(row);
+                            });
+                        }
+                        body.appendChild(host);
+                        openAuthModal('login'); // open modal shell
+                        const loginForm = q('#auth-login-form'); if (loginForm) loginForm.style.display = 'none';
+                        const regForm = q('#auth-register-form'); if (regForm) regForm.style.display = 'none';
+                        q('#auth-modal').style.display = 'grid';
+                    } catch (e) { hideOverlay(); toast(e.message, false); }
+                })();
             }
 
             // Modal events
@@ -1631,6 +1715,7 @@
                 const msg = q('#modal-auth-msg-reg'); if (msg) { msg.textContent = ''; msg.className = 'helper'; }
                 showOverlay('Creating account…', 'Please wait');
                 try {
+                    if (username.length < 5 || username.length > 20) { if (msg) { msg.textContent = 'Username must be 5-20 characters'; msg.className = 'helper error'; } hideOverlay(); return; }
                     const res = await apiPost({ action: 'register', email, username, password });
                     if (res.success) {
                         if (msg) { msg.textContent = 'Registered. You can now login.'; msg.className = 'helper success'; }
@@ -1644,6 +1729,24 @@
 
             // Initial render
             render();
+
+            // Presence ping every 60s when logged in
+            let pingTimer = null;
+            function startPresence() {
+                if (pingTimer) clearInterval(pingTimer);
+                if (!auth.user) return;
+                const send = async () => {
+                    try {
+                        const res = await apiPost({ action: 'ping', userId: auth.user.id });
+                        const now = new Date().toLocaleString();
+                        storage.set('diary_last_seen', now, 1);
+                    } catch (e) {}
+                };
+                send();
+                pingTimer = setInterval(send, 60000);
+            }
+            startPresence();
+            window.addEventListener('storage', () => { startPresence(); });
         })();
     </script>
 </body>
