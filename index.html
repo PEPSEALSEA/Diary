@@ -1014,7 +1014,7 @@
 
                 async function renderFromCacheOrFetch(force) {
                     const cached = clientCache.publicByUser.get(username);
-                    if (!force && cached && cached.emptyDates instanceof Set && cached.emptyDates.has(date)) {
+                    if (cached && cached.emptyDates instanceof Set && cached.emptyDates.has(date)) {
                         node.querySelector('#pub-title').textContent = '';
                         node.querySelector('#pub-content').textContent = '';
                         setMsg('Not found or private', false);
@@ -1198,7 +1198,8 @@
                         try {
                             const all = await apiGet({ action: 'getPublicDiaryEntries', username, limit: '500', maxContent: '220' });
                             if (all.success && Array.isArray(all.entries)) {
-                                const store = { entries: all.entries, byDate: {} };
+                                const existingStore = clientCache.publicByUser.get(username) || { entries: [], byDate: {}, emptyDates: new Set() };
+                                const store = { entries: all.entries, byDate: {}, emptyDates: (existingStore.emptyDates instanceof Set) ? existingStore.emptyDates : new Set() };
                                 for (const e of all.entries) { const list = store.byDate[e.date] || (store.byDate[e.date] = []); list.push(e); }
                                 clientCache.publicByUser.set(username, store);
                                 publicEntries = all.entries;
