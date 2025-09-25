@@ -1096,11 +1096,13 @@
                         titleInput.value = '';
                         contentInput.value = '';
                         privacySelect.value = 'public';
+                        updateTitleIconFromPrivacy();
                         currentHasEntry = false;
                         if (!force && clientCache.userEmptyDates && clientCache.userEmptyDates.has(d)) {
                             titleInput.value = '';
                             contentInput.value = '';
                             privacySelect.value = 'public';
+                            updateTitleIconFromPrivacy();
                             currentHasEntry = false;
                             lastSavedSnapshot = { title: '', content: '', privacy: 'public', date: d };
                             setMsg('No entry for ' + toDisplayDate(d), false, true);
@@ -1225,6 +1227,8 @@
                         const res = await apiPost({ action: 'deleteDiaryEntry', userId: user.id, date: dateInput.value || today() });
                         if (res.success) {
                             titleInput.value = ''; contentInput.value = '';
+                            privacySelect.value = 'public';
+                            updateTitleIconFromPrivacy();
                             setMsg('Deleted.', true);
                             const d = dateInput.value || today();
                             if (Array.isArray(clientCache.userEntries)) { clientCache.userEntries = clientCache.userEntries.filter(e => e.date !== d); }
