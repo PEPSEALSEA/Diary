@@ -267,6 +267,13 @@
         @keyframes toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes toast-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-8px); } }
         @keyframes toast-bar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+        /* Auth modal */
+        #auth-modal { position: fixed; inset: 0; display: none; place-items: center; background: rgba(5,8,13,.72); z-index: 10001; }
+        #auth-modal .auth-box { background: linear-gradient(180deg, var(--panel), var(--panel-2)); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; width: 100%; max-width: 420px; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+        #auth-modal .auth-head { display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px; }
+        #auth-modal .auth-close { background: transparent; border: 1px solid var(--border); color: var(--text); padding: 6px 10px; border-radius: 8px; cursor: pointer; }
+        #auth-modal .auth-switch { display:flex; gap:8px; align-items:center; justify-content:center; margin-top: 8px; }
+        #auth-modal .auth-switch a { cursor: pointer; color: var(--accent-2); text-decoration: none; }
     </style>
 </head>
 
@@ -294,6 +301,46 @@
         </div>
     </div>
     <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+    <div id="auth-modal" aria-modal="true" role="dialog">
+        <div class="auth-box">
+            <div class="auth-head">
+                <div id="auth-modal-title" style="font-weight:600">Login</div>
+                <button id="auth-close" class="auth-close">Close</button>
+            </div>
+            <div id="auth-modal-body">
+                <div id="auth-login-form">
+                    <label>Username or Email</label>
+                    <input id="modal-login-identifier" placeholder="you@example.com or username" />
+                    <div class="spacer"></div>
+                    <label>Password</label>
+                    <input id="modal-login-password" type="password" />
+                    <div class="spacer"></div>
+                    <button id="modal-btn-login" style="width:100%">Login</button>
+                    <div class="spacer"></div>
+                    <div class="auth-switch helper">No account? <a id="switch-to-register">Register</a></div>
+                    <div class="spacer"></div>
+                    <span class="helper" id="modal-auth-msg"></span>
+                </div>
+                <div id="auth-register-form" style="display:none">
+                    <label>Email</label>
+                    <input id="modal-reg-email" placeholder="you@example.com" />
+                    <div class="spacer"></div>
+                    <label>Username</label>
+                    <input id="modal-reg-username" placeholder="yourname" />
+                    <div class="spacer"></div>
+                    <label>Password</label>
+                    <input id="modal-reg-password" type="password" />
+                    <div class="spacer"></div>
+                    <button id="modal-btn-register" style="width:100%">Create account</button>
+                    <div class="spacer"></div>
+                    <div class="auth-switch helper">Have an account? <a id="switch-to-login">Login</a></div>
+                    <div class="spacer"></div>
+                    <span class="helper" id="modal-auth-msg-reg"></span>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script>
         (function () {
@@ -437,6 +484,18 @@
                 return t;
             }
 
+            function updateNavVisibility() {
+                const nl = q('#nav-login');
+                const lo = q('#nav-logout');
+                if (auth.user) {
+                    if (nl) nl.style.display = 'none';
+                    if (lo) lo.style.display = 'inline';
+                } else {
+                    if (lo) lo.style.display = 'none';
+                    if (nl) nl.style.display = 'inline';
+                }
+            }
+
             function render() {
                 const mount = q('#route-view');
                 mount.innerHTML = '';
@@ -459,6 +518,7 @@
                 const maybeUserOnly = segments.length === 1 ? segments[0] : null;
 
                 const hash = window.location.hash || '';
+                updateNavVisibility();
                 if (hash.startsWith('#public')) {
                     const n = PublicList();
                     hideOverlay();
@@ -479,18 +539,39 @@
                 }
 
                 if (auth.user) {
-                    q('#nav-logout').style.display = 'inline';
-                    const nl = q('#nav-login'); if (nl) nl.style.display = 'none';
+                    updateNavVisibility();
                     const n = Dashboard();
                     // overlay will be hidden inside once initial load completes
                     return mount.appendChild(n);
                 } else {
-                    q('#nav-logout').style.display = 'none';
-                    const nl = q('#nav-login'); if (nl) nl.style.display = 'inline';
+                    updateNavVisibility();
                     const n = AuthPage();
                     hideOverlay();
                     return mount.appendChild(n);
                 }
+            }
+
+            // Modal helpers
+            function openAuthModal(mode) {
+                const modal = q('#auth-modal');
+                if (!modal) return;
+                const loginForm = q('#auth-login-form');
+                const regForm = q('#auth-register-form');
+                const title = q('#auth-modal-title');
+                if (mode === 'register') {
+                    if (title) title.textContent = 'Register';
+                    if (loginForm) loginForm.style.display = 'none';
+                    if (regForm) regForm.style.display = '';
+                } else {
+                    if (title) title.textContent = 'Login';
+                    if (loginForm) loginForm.style.display = '';
+                    if (regForm) regForm.style.display = 'none';
+                }
+                modal.style.display = 'grid';
+            }
+            function closeAuthModal() {
+                const modal = q('#auth-modal');
+                if (modal) modal.style.display = 'none';
             }
 
             function AuthPage() {
@@ -1521,8 +1602,43 @@
             q('#nav-logout').addEventListener('click', (e) => { e.preventDefault(); auth.user = null; render(); });
             const navLogin = q('#nav-login');
             if (navLogin) {
-                navLogin.addEventListener('click', (e) => { e.preventDefault(); history.pushState({}, '', basePath() + '/'); render(); });
+                navLogin.addEventListener('click', (e) => { e.preventDefault(); openAuthModal('login'); });
             }
+
+            // Modal events
+            const modalClose = q('#auth-close'); if (modalClose) modalClose.addEventListener('click', closeAuthModal);
+            const switchToRegister = q('#switch-to-register'); if (switchToRegister) switchToRegister.addEventListener('click', (e) => { e.preventDefault(); openAuthModal('register'); });
+            const switchToLogin = q('#switch-to-login'); if (switchToLogin) switchToLogin.addEventListener('click', (e) => { e.preventDefault(); openAuthModal('login'); });
+            const modalBtnLogin = q('#modal-btn-login'); if (modalBtnLogin) modalBtnLogin.addEventListener('click', async () => {
+                const identifier = (q('#modal-login-identifier').value || '').trim();
+                const password = q('#modal-login-password').value || '';
+                const msg = q('#modal-auth-msg'); if (msg) { msg.textContent = ''; msg.className = 'helper'; }
+                showOverlay('Logging in…', 'Please wait');
+                try {
+                    const res = await apiPost({ action: 'login', identifier, password });
+                    if (res.success) {
+                        auth.user = res.user;
+                        closeAuthModal();
+                        render();
+                    } else { if (msg) { msg.textContent = res.error || res.message || 'Login failed'; msg.className = 'helper error'; } }
+                } catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'helper error'; } }
+                finally { hideOverlay(); }
+            });
+            const modalBtnRegister = q('#modal-btn-register'); if (modalBtnRegister) modalBtnRegister.addEventListener('click', async () => {
+                const email = (q('#modal-reg-email').value || '').trim();
+                const username = (q('#modal-reg-username').value || '').trim();
+                const password = q('#modal-reg-password').value || '';
+                const msg = q('#modal-auth-msg-reg'); if (msg) { msg.textContent = ''; msg.className = 'helper'; }
+                showOverlay('Creating account…', 'Please wait');
+                try {
+                    const res = await apiPost({ action: 'register', email, username, password });
+                    if (res.success) {
+                        if (msg) { msg.textContent = 'Registered. You can now login.'; msg.className = 'helper success'; }
+                        openAuthModal('login');
+                    } else { if (msg) { msg.textContent = res.error || res.message || 'Registration failed'; msg.className = 'helper error'; } }
+                } catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'helper error'; } }
+                finally { hideOverlay(); }
+            });
             window.addEventListener('hashchange', render);
             window.addEventListener('popstate', render);
 
