@@ -96,7 +96,8 @@
         }
 
         input,
-        textarea {
+        textarea,
+        select {
             width: 100%;
             padding: 12px 12px;
             border-radius: 10px;
@@ -460,6 +461,68 @@
                     } catch (e) { msg.textContent = e.message; msg.className = 'helper error'; }
                 });
 
+                // Friends management UI
+                const friendsCard = el(`
+          <div class="card" style="margin-top:16px">
+            <h3>Friends</h3>
+            <div id="friends-list" class="helper">Loading…</div>
+            <div class="spacer"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <input id="friend-identifier" placeholder="email, username, or userId" style="flex:1 1 240px" />
+              <button id="btn-add-friend">Add</button>
+              <button id="btn-refresh-friends" class="ghost">Refresh</button>
+            </div>
+          </div>
+        `);
+                node.querySelector('.col:last-child .card').after(friendsCard);
+
+                async function loadFriends() {
+                    const wrap = node.querySelector('#friends-list');
+                    try {
+                        const res = await apiGet({ action: 'listFriends', ownerId: user.id });
+                        if (!res.success) { wrap.textContent = res.error || 'Failed to load'; return; }
+                        const list = document.createElement('div');
+                        if (!res.friends || res.friends.length === 0) { wrap.textContent = 'No friends yet.'; return; }
+                        res.friends.forEach(f => {
+                            const row = document.createElement('div');
+                            row.style.display = 'flex';
+                            row.style.justifyContent = 'space-between';
+                            row.style.alignItems = 'center';
+                            row.style.marginBottom = '8px';
+                            const left = document.createElement('div');
+                            left.className = 'helper';
+                            left.textContent = (f.friendEmail || '') + (f.friendUserId ? (f.friendEmail ? ' · ' : '') + f.friendUserId : '');
+                            const btn = document.createElement('button');
+                            btn.className = 'danger';
+                            btn.textContent = 'Remove';
+                            btn.addEventListener('click', async () => {
+                                try {
+                                    const res = await apiPost({ action: 'removeFriend', ownerId: user.id, friendIdentifier: f.friendUserId || f.friendEmail });
+                                    if (res.success) loadFriends();
+                                } catch (e) {}
+                            });
+                            row.appendChild(left);
+                            row.appendChild(btn);
+                            list.appendChild(row);
+                        });
+                        wrap.innerHTML = '';
+                        wrap.appendChild(list);
+                    } catch (e) { wrap.textContent = e.message; }
+                }
+
+                node.querySelector('#btn-add-friend').addEventListener('click', async () => {
+                    const input = node.querySelector('#friend-identifier');
+                    const val = input.value.trim();
+                    if (!val) return;
+                    try {
+                        const res = await apiPost({ action: 'addFriend', ownerId: user.id, friendIdentifier: val });
+                        if (res.success) { input.value = ''; loadFriends(); }
+                    } catch (e) {}
+                });
+                node.querySelector('#btn-refresh-friends').addEventListener('click', loadFriends);
+
+                loadFriends();
+
                 return node;
             }
 
@@ -500,8 +563,9 @@
             <div class="spacer"></div>
             <label>Privacy</label>
             <select id="diary-private">
-              <option value="false">Public (anyone with link)</option>
-              <option value="true">Private (only you)</option>
+              <option value="public">Public (anyone)</option>
+              <option value="friend">Friend (approved users)</option>
+              <option value="private">Private (only you)</option>
             </select>
             <div class="spacer"></div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -569,7 +633,7 @@
                 // Edit mode toggle (read-only by default)
                 let editMode = false;
                 let currentHasEntry = false;
-                let lastSavedSnapshot = { title: '', content: '', isPrivate: 'false', date: dateInput.value };
+                let lastSavedSnapshot = { title: '', content: '', privacy: 'public', date: dateInput.value };
                 let autosaveTimer = null;
                 let autosaveInFlight = false;
                 let lastAutosaveTime = null;
@@ -611,7 +675,7 @@
                     return (
                         lastSavedSnapshot.title !== titleInput.value ||
                         lastSavedSnapshot.content !== contentInput.value ||
-                        String(lastSavedSnapshot.isPrivate) !== String(privacySelect.value) ||
+                        String(lastSavedSnapshot.privacy) !== String(privacySelect.value) ||
                         lastSavedSnapshot.date !== (dateInput.value || today())
                     );
                 }
@@ -646,7 +710,7 @@
                             currentHasEntry = true; 
                             if (force) setMsg('Auto-saved at ' + new Date().toLocaleTimeString(), true);
                         }
-                        lastSavedSnapshot = { title: titleInput.value, content: contentInput.value, isPrivate: privacySelect.value, date: dateInput.value || today() };
+                        lastSavedSnapshot = { title: titleInput.value, content: contentInput.value, privacy: privacySelect.value, date: dateInput.value || today() };
                         lastAutosaveTime = Date.now();
                         updateAutosaveStatus();
                     } catch (e) {
@@ -719,9 +783,11 @@
                         if (count > 0) {
                             const a = document.createElement('a'); a.className = 'link truncate'; a.href = `${basePath()}/${encodeURIComponent(user.username)}/${toDisplayDate(dstr)}`; a.target = '_blank'; a.rel = 'noopener';
                             const first = list[0];
-                            a.textContent = (first.title || 'Untitled') + (first.isPrivate ? ' (private)' : '');
-                            a.title = (first.title || 'Untitled') + (first.isPrivate ? ' (private)' : '');
-                            try { cell.title = list.map(e => (e.title || 'Untitled') + (e.isPrivate ? ' (private)' : '')).join('\n'); } catch (e) {}
+                            const pval = first.privacy || (first.isPrivate === true || first.isPrivate === 'true' ? 'private' : 'public');
+                            const label = pval === 'friend' ? ' (friend)' : (pval === 'private' ? ' (private)' : '');
+                            a.textContent = (first.title || 'Untitled') + label;
+                            a.title = (first.title || 'Untitled') + label;
+                            try { cell.title = list.map(e => { const pv = e.privacy || (e.isPrivate === true || e.isPrivate === 'true' ? 'private' : 'public'); const lb = pv === 'friend' ? ' (friend)' : (pv === 'private' ? ' (private)' : ''); return (e.title || 'Untitled') + lb; }).join('\n'); } catch (e) {}
                             const p = document.createElement('div'); p.style.marginTop = '6px'; p.appendChild(a); cell.appendChild(p);
                             const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = String(count);
                             badge.style.float = 'right';
@@ -754,7 +820,9 @@
                                 const a = document.createElement('a');
                                 a.className = 'link';
                                 a.href = `${basePath()}/${encodeURIComponent(user.username)}/${toDisplayDate(e.date)}`;
-                                a.textContent = `${toDisplayDate(e.date)} — ${e.title || 'Untitled'} ${e.isPrivate ? '(private)' : ''}`;
+                                const pval = e.privacy || (e.isPrivate === true || e.isPrivate === 'true' ? 'private' : 'public');
+                                const label = pval === 'friend' ? '(friend)' : (pval === 'private' ? '(private)' : '');
+                                a.textContent = `${toDisplayDate(e.date)} — ${e.title || 'Untitled'} ${label}`;
                                 a.target = '_blank'; a.rel = 'noopener';
 
                                 const preview = document.createElement('div');
@@ -783,7 +851,9 @@
                             const a = document.createElement('a');
                             a.className = 'link';
                             a.href = `${basePath()}/${encodeURIComponent(user.username)}/${toDisplayDate(e.date)}`;
-                            a.textContent = `${toDisplayDate(e.date)} — ${e.title || 'Untitled'} ${e.isPrivate ? '(private)' : ''}`;
+                            const pval = e.privacy || (e.isPrivate === true || e.isPrivate === 'true' ? 'private' : 'public');
+                            const label = pval === 'friend' ? '(friend)' : (pval === 'private' ? '(private)' : '');
+                            a.textContent = `${toDisplayDate(e.date)} — ${e.title || 'Untitled'} ${label}`;
                             a.target = '_blank'; a.rel = 'noopener';
 
                             const preview = document.createElement('div');
@@ -809,14 +879,14 @@
                         // Clear fields immediately on date switch to avoid showing stale content
                         titleInput.value = '';
                         contentInput.value = '';
-                        privacySelect.value = 'false';
+                        privacySelect.value = 'public';
                         currentHasEntry = false;
                         if (!force && clientCache.userEmptyDates && clientCache.userEmptyDates.has(d)) {
                             titleInput.value = '';
                             contentInput.value = '';
-                            privacySelect.value = 'false';
+                            privacySelect.value = 'public';
                             currentHasEntry = false;
-                            lastSavedSnapshot = { title: '', content: '', isPrivate: 'false', date: d };
+                            lastSavedSnapshot = { title: '', content: '', privacy: 'public', date: d };
                             setMsg('No entry for ' + toDisplayDate(d), false);
                             return;
                         }
@@ -828,19 +898,19 @@
                             const ownEntry = clientCache.userEntriesByDate[d][0];
                             titleInput.value = ownEntry.title || '';
                             contentInput.value = ownEntry.content || '';
-                            privacySelect.value = String(!!ownEntry.isPrivate);
+                            privacySelect.value = ownEntry.privacy || (ownEntry.isPrivate === true || ownEntry.isPrivate === 'true' ? 'private' : 'public');
                             ok = true; currentHasEntry = true;
                         } else {
                             const own = await apiGet({ action: 'getUserDiaryEntry', userId: user.id, date: d });
                             if (own.success && own.entry) {
                                 titleInput.value = own.entry.title || '';
                                 contentInput.value = own.entry.content || '';
-                                privacySelect.value = String(!!own.entry.isPrivate);
+                                privacySelect.value = own.entry.privacy || (own.entry.isPrivate === true || own.entry.isPrivate === 'true' ? 'private' : 'public');
                                 ok = true; currentHasEntry = true;
                             } else {
                                 // Fallback to public view if this date is public and username/date requested directly
                                 try {
-                                    const pub = await apiGet({ action: 'getDiaryEntry', username: user.username, date: d });
+                                    const pub = await apiGet({ action: 'getDiaryEntry', username: user.username, date: d, viewerUserId: (auth.user && auth.user.id) ? auth.user.id : '' });
                                     if (pub.success && pub.entry) {
                                         titleInput.value = pub.entry.title || '';
                                         contentInput.value = pub.entry.content || '';
@@ -850,7 +920,7 @@
                             }
                         }
                         if (seq !== currentLoadSeq) return; // ignore stale response
-                        lastSavedSnapshot = { title: titleInput.value, content: contentInput.value, isPrivate: privacySelect.value, date: d };
+                        lastSavedSnapshot = { title: titleInput.value, content: contentInput.value, privacy: privacySelect.value, date: d };
                         if (ok) {
                             setMsg('Loaded entry for ' + toDisplayDate(d), true);
                             if (clientCache.userEmptyDates) clientCache.userEmptyDates.delete(d);
@@ -873,14 +943,14 @@
                         date: dateInput.value || today(),
                         title: titleInput.value,
                         content: contentInput.value,
-                        isPrivate: privacySelect.value
+                        privacy: privacySelect.value
                     };
                     try {
                         const res = await apiPost(payload);
                         if (res.success) {
                             setMsg('Saved.', true);
                             // update client cache
-                            const entry = { date: payload.date, title: payload.title, content: payload.content, isPrivate: payload.isPrivate === 'true' || payload.isPrivate === true };
+                            const entry = { date: payload.date, title: payload.title, content: payload.content, privacy: payload.privacy };
                             if (!Array.isArray(clientCache.userEntries)) clientCache.userEntries = [];
                             clientCache.userEntries.unshift(entry);
                             clientCache.userLoadedAll = true;
@@ -903,7 +973,7 @@
                         date: dateInput.value || today(),
                         title: titleInput.value,
                         content: contentInput.value,
-                        isPrivate: privacySelect.value
+                        privacy: privacySelect.value
                     };
                     try {
                         const res = await apiPost(payload);
@@ -911,9 +981,9 @@
                             setMsg('Updated.', true);
                             // update client cache
                             if (Array.isArray(clientCache.userEntries)) {
-                                for (const e of clientCache.userEntries) { if (e.date === payload.date) { e.title = payload.title; e.content = payload.content; e.isPrivate = payload.isPrivate === 'true' || payload.isPrivate === true; break; } }
+                                for (const e of clientCache.userEntries) { if (e.date === payload.date) { e.title = payload.title; e.content = payload.content; e.privacy = payload.privacy; break; } }
                             }
-                            clientCache.userEntriesByDate[payload.date] = [{ date: payload.date, title: payload.title, content: payload.content, isPrivate: payload.isPrivate === 'true' || payload.isPrivate === true }];
+                            clientCache.userEntriesByDate[payload.date] = [{ date: payload.date, title: payload.title, content: payload.content, privacy: payload.privacy }];
                             if (clientCache.userEmptyDates) clientCache.userEmptyDates.delete(payload.date);
                             renderCalendar();
                             loadRecent();
@@ -1036,7 +1106,7 @@
                     try {
                         const servedFromCache = await renderFromCacheOrFetch(force);
                         if (!servedFromCache) {
-                            const res = await apiGet({ action: 'getDiaryEntry', username, date });
+                            const res = await apiGet({ action: 'getDiaryEntry', username, date, viewerUserId: (auth.user && auth.user.id) ? auth.user.id : '' });
                             if (seq !== currentLoadSeq) return; // ignore stale
                             if (res.success && res.entry) {
                                 node.querySelector('#pub-title').textContent = res.entry.title || '';
@@ -1055,7 +1125,7 @@
                         (async function prefetchAllPublic() {
                             try {
                                 const monthStr = date.slice(0, 7);
-                                const month = await apiGet({ action: 'getPublicDiaryEntries', username, month: monthStr, maxContent: '220' });
+                                const month = await apiGet({ action: 'getPublicDiaryEntries', username, month: monthStr, maxContent: '220', viewerUserId: (auth.user && auth.user.id) ? auth.user.id : '' });
                                 const storeExisting = clientCache.publicByUser.get(username) || { entries: [], byDate: {}, emptyDates: new Set() };
                                 if (!(storeExisting.emptyDates instanceof Set)) storeExisting.emptyDates = new Set();
                                 if (month.success && Array.isArray(month.entries)) {
@@ -1063,7 +1133,7 @@
                                     storeExisting.entries = storeExisting.entries.concat(month.entries);
                                     clientCache.publicByUser.set(username, storeExisting);
                                 }
-                                const all = await apiGet({ action: 'getPublicDiaryEntries', username, limit: '500' });
+                                const all = await apiGet({ action: 'getPublicDiaryEntries', username, limit: '500', viewerUserId: (auth.user && auth.user.id) ? auth.user.id : '' });
                                 if (all.success && Array.isArray(all.entries)) {
                                     const store = { entries: all.entries, byDate: {}, emptyDates: storeExisting.emptyDates };
                                     for (const e of all.entries) { const list = store.byDate[e.date] || (store.byDate[e.date] = []); list.push(e); }
@@ -1104,7 +1174,7 @@
 
                 (async function () {
                     try {
-                        const res = await apiGet({ action: 'getPublicDiaryEntries', limit: '50', maxContent: '220' });
+                        const res = await apiGet({ action: 'getPublicDiaryEntries', limit: '50', maxContent: '220', viewerUserId: (auth.user && auth.user.id) ? auth.user.id : '' });
                         const wrap = node.querySelector('#pub-list');
                         if (!res.success) { wrap.textContent = res.error || 'Failed to load'; return; }
                         if (!res.entries || res.entries.length === 0) { wrap.textContent = 'No public entries yet.'; return; }
@@ -1181,7 +1251,7 @@
                     // Quick month fetch for fast first paint
                     try {
                         const monthStr = String(calYear) + '-' + String(calMonth + 1).padStart(2, '0');
-                        const res = await apiGet({ action: 'getPublicDiaryEntries', username, month: monthStr, maxContent: '160' });
+                        const res = await apiGet({ action: 'getPublicDiaryEntries', username, month: monthStr, maxContent: '160', viewerUserId: (auth.user && auth.user.id) ? auth.user.id : '' });
                         publicEntries = (res.success && Array.isArray(res.entries)) ? res.entries : [];
                         try {
                             const existing = clientCache.publicByUser.get(username) || { entries: [], byDate: {}, emptyDates: new Set() };
@@ -1196,7 +1266,7 @@
                     // Background prefetch of all public entries for user
                     (async function prefetchAll() {
                         try {
-                            const all = await apiGet({ action: 'getPublicDiaryEntries', username, limit: '500', maxContent: '220' });
+                            const all = await apiGet({ action: 'getPublicDiaryEntries', username, limit: '500', maxContent: '220', viewerUserId: (auth.user && auth.user.id) ? auth.user.id : '' });
                             if (all.success && Array.isArray(all.entries)) {
                                 const existingStore = clientCache.publicByUser.get(username) || { entries: [], byDate: {}, emptyDates: new Set() };
                                 const store = { entries: all.entries, byDate: {}, emptyDates: (existingStore.emptyDates instanceof Set) ? existingStore.emptyDates : new Set() };
