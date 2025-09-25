@@ -288,8 +288,8 @@
     </div>
     <div id="app-overlay">
         <div class="box">
-            <div style="font-weight:600;margin-bottom:6px">Loading…</div>
-            <div class="helper">Preparing your diary</div>
+            <div id="app-overlay-title" style="font-weight:600;margin-bottom:6px">Loading…</div>
+            <div id="app-overlay-helper" class="helper">Preparing your diary</div>
         </div>
     </div>
     <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
@@ -390,6 +390,14 @@
             function show(elm) { elm.style.display = ''; }
             function hide(elm) { elm.style.display = 'none'; }
             function hideOverlay() { const o = q('#app-overlay'); if (o) o.style.display = 'none'; }
+            function showOverlay(title, helper) {
+                const o = q('#app-overlay'); if (!o) return;
+                const t = q('#app-overlay-title');
+                const h = q('#app-overlay-helper');
+                if (t) t.textContent = title || 'Working…';
+                if (h) h.textContent = helper || '';
+                o.style.display = 'grid';
+            }
 
             let __lastToast = { text: '', time: 0 };
             function toast(text, ok, force) {
@@ -515,6 +523,7 @@
                     const password = node.querySelector('#login-password').value;
                     const msg = node.querySelector('#auth-msg');
                     msg.textContent = '';
+                    showOverlay('Logging in…', 'Please wait');
                     try {
                         const res = await apiPost({ action: 'login', identifier, password });
                         if (res.success) {
@@ -525,6 +534,7 @@
                             msg.className = 'helper error';
                         }
                     } catch (e) { msg.textContent = e.message; msg.className = 'helper error'; }
+                    finally { hideOverlay(); }
                 });
 
                 node.querySelector('#btn-register').addEventListener('click', async () => {
@@ -533,6 +543,7 @@
                     const password = node.querySelector('#reg-password').value;
                     const msg = node.querySelector('#auth-msg');
                     msg.textContent = '';
+                    showOverlay('Creating account…', 'Please wait');
                     try {
                         const res = await apiPost({ action: 'register', email, username, password });
                         if (res.success) {
@@ -543,6 +554,7 @@
                             msg.className = 'helper error';
                         }
                     } catch (e) { msg.textContent = e.message; msg.className = 'helper error'; }
+                    finally { hideOverlay(); }
                 });
 
                 return node;
@@ -651,10 +663,12 @@
                             btn.className = 'danger';
                             btn.textContent = 'Remove';
                             btn.addEventListener('click', async () => {
+                                showOverlay('Removing friend…', 'Please wait');
                                 try {
                                     const res = await apiPost({ action: 'removeFriend', ownerId: user.id, friendIdentifier: f.friendUserId || f.friendEmail });
                                     if (res.success) loadFriends();
                                 } catch (e) {}
+                                finally { hideOverlay(); }
                             });
                             row.appendChild(left);
                             row.appendChild(btn);
@@ -668,10 +682,12 @@
                     const input = node.querySelector('#friend-identifier');
                     const val = input.value.trim();
                     if (!val) return;
+                    showOverlay('Adding friend…', 'Please wait');
                     try {
                         const res = await apiPost({ action: 'addFriend', ownerId: user.id, friendIdentifier: val });
                         if (res.success) { input.value = ''; loadFriends(); }
                     } catch (e) {}
+                    finally { hideOverlay(); }
                 });
                 node.querySelector('#btn-refresh-friends').addEventListener('click', loadFriends);
                 loadFriends();
@@ -786,10 +802,10 @@
                     autosaveInFlight = true;
                     try {
                         if (currentHasEntry) {
-                            await update();
+                            await update(false);
                             if (force) setMsg('Auto-saved at ' + new Date().toLocaleTimeString(), true);
                         } else {
-                            await save();
+                            await save(false);
                             currentHasEntry = true;
                             if (force) setMsg('Auto-saved at ' + new Date().toLocaleTimeString(), true);
                         }
@@ -1018,7 +1034,7 @@
                     } catch (e) { setMsg(e.message, false); }
                 }
 
-                async function save() {
+                async function save(showBusy = true) {
                     clearMsg();
                     const payload = {
                         action: 'saveDiaryEntry',
@@ -1028,6 +1044,7 @@
                         content: contentInput.value,
                         privacy: privacySelect.value
                     };
+                    if (showBusy) showOverlay('Saving…', 'Please wait');
                     try {
                         const res = await apiPost(payload);
                         if (res.success) {
@@ -1046,9 +1063,10 @@
                         }
                         else { setMsg(res.error || res.message || 'Save failed', false); }
                     } catch (e) { setMsg(e.message, false); }
+                    finally { if (showBusy) hideOverlay(); }
                 }
 
-                async function update() {
+                async function update(showBusy = true) {
                     clearMsg();
                     const payload = {
                         action: 'updateDiaryEntry',
@@ -1058,6 +1076,7 @@
                         content: contentInput.value,
                         privacy: privacySelect.value
                     };
+                    if (showBusy) showOverlay('Updating…', 'Please wait');
                     try {
                         const res = await apiPost(payload);
                         if (res.success) {
@@ -1073,11 +1092,13 @@
                         }
                         else { setMsg(res.error || res.message || 'Update failed', false); }
                     } catch (e) { setMsg(e.message, false); }
+                    finally { if (showBusy) hideOverlay(); }
                 }
 
                 async function remove() {
                     if (!confirm('Delete this entry?')) return;
                     clearMsg();
+                    showOverlay('Deleting…', 'Please wait');
                     try {
                         const res = await apiPost({ action: 'deleteDiaryEntry', userId: user.id, date: dateInput.value || today() });
                         if (res.success) {
@@ -1093,6 +1114,7 @@
                         }
                         else { setMsg(res.error || 'Delete failed', false); }
                     } catch (e) { setMsg(e.message, false); }
+                    finally { hideOverlay(); }
                 }
 
                 node.querySelector('#btn-save').addEventListener('click', save);
