@@ -735,68 +735,9 @@
             <h3>Recent entries</h3>
             <div id="recent-list" class="helper">Loading…</div>
           </div>
-          <div class="card" style="margin-top:16px">
-            <h3>Friends</h3>
-            <div id="friends-list" class="helper">Loading…</div>
-            <div class="spacer"></div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <input id="friend-identifier" placeholder="email, username, or userId" style="flex:1 1 240px" />
-              <button id="btn-add-friend">Add</button>
-              <button id="btn-refresh-friends" class="ghost">Refresh</button>
-            </div>
-          </div>
         </div>
       </div>
     `);
-                // Friends management
-                async function loadFriends() {
-                    const wrap = node.querySelector('#friends-list');
-                    try {
-                        const res = await apiGet({ action: 'listFriends', ownerId: user.id });
-                        if (!res.success) { wrap.textContent = res.error || 'Failed to load'; return; }
-                        if (!res.friends || res.friends.length === 0) { wrap.textContent = 'No friends yet.'; return; }
-                        const list = document.createElement('div');
-                        res.friends.forEach(f => {
-                            const row = document.createElement('div');
-                            row.style.display = 'flex';
-                            row.style.justifyContent = 'space-between';
-                            row.style.alignItems = 'center';
-                            row.style.marginBottom = '8px';
-                            const left = document.createElement('div');
-                            left.className = 'helper';
-                            left.textContent = (f.friendEmail || '') + (f.friendUserId ? (f.friendEmail ? ' · ' : '') + f.friendUserId : '');
-                            const btn = document.createElement('button');
-                            btn.className = 'danger';
-                            btn.textContent = 'Remove';
-                            btn.addEventListener('click', async () => {
-                                showOverlay('Removing friend…', 'Please wait');
-                                try {
-                                    const res = await apiPost({ action: 'removeFriend', ownerId: user.id, friendIdentifier: f.friendUserId || f.friendEmail });
-                                    if (res.success) loadFriends();
-                                } catch (e) {}
-                                finally { hideOverlay(); }
-                            });
-                            row.appendChild(left);
-                            row.appendChild(btn);
-                            list.appendChild(row);
-                        });
-                        wrap.innerHTML = '';
-                        wrap.appendChild(list);
-                    } catch (e) { wrap.textContent = e.message; }
-                }
-                node.querySelector('#btn-add-friend').addEventListener('click', async () => {
-                    const input = node.querySelector('#friend-identifier');
-                    const val = input.value.trim();
-                    if (!val) return;
-                    showOverlay('Adding friend…', 'Please wait');
-                    try {
-                        const res = await apiPost({ action: 'addFriend', ownerId: user.id, friendIdentifier: val });
-                        if (res.success) { input.value = ''; loadFriends(); }
-                    } catch (e) {}
-                    finally { hideOverlay(); }
-                });
-                node.querySelector('#btn-refresh-friends').addEventListener('click', loadFriends);
-                loadFriends();
 
                 const dateInput = node.querySelector('#diary-date');
                 const titleInput = node.querySelector('#diary-title');
@@ -1660,6 +1601,12 @@
                         title.textContent = 'Friends';
                         body.innerHTML = '';
                         const host = document.createElement('div');
+                        const addWrap = document.createElement('div');
+                        addWrap.style.display = 'flex'; addWrap.style.gap = '8px'; addWrap.style.marginBottom = '12px'; addWrap.style.flexWrap = 'wrap';
+                        const addInput = document.createElement('input'); addInput.placeholder = 'email, username, or userId'; addInput.style.flex = '1 1 240px'; addInput.id = 'friends-add-input';
+                        const addBtn = document.createElement('button'); addBtn.textContent = 'Add'; addBtn.id = 'friends-add-btn';
+                        addWrap.appendChild(addInput); addWrap.appendChild(addBtn);
+                        host.appendChild(addWrap);
                         if (!res.success || !Array.isArray(res.friends) || res.friends.length === 0) {
                             const empty = document.createElement('div'); empty.className = 'helper'; empty.textContent = 'No friends yet.'; host.appendChild(empty);
                         } else {
@@ -1685,6 +1632,17 @@
                         const loginForm = q('#auth-login-form'); if (loginForm) loginForm.style.display = 'none';
                         const regForm = q('#auth-register-form'); if (regForm) regForm.style.display = 'none';
                         q('#auth-modal').style.display = 'grid';
+
+                        // Wire add button
+                        addBtn.addEventListener('click', async () => {
+                            const val = (addInput.value || '').trim(); if (!val) return;
+                            showOverlay('Adding friend…', 'Please wait');
+                            try {
+                                const r = await apiPost({ action: 'addFriend', ownerId: auth.user && auth.user.id, friendIdentifier: val });
+                                if (r.success) { addInput.value = ''; openFriendsModal(); }
+                            } catch (e) {}
+                            finally { hideOverlay(); }
+                        });
                     } catch (e) { hideOverlay(); toast(e.message, false); }
                 })();
             }
