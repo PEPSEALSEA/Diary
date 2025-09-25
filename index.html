@@ -788,6 +788,20 @@
                     }
                 }
 
+                function setPrivacyValueSafe(value) {
+                    const v = String(value || '').toLowerCase();
+                    if (v === 'public' || v === 'friend' || v === 'private') {
+                        privacySelect.value = v;
+                    } else if (v === 'true') {
+                        privacySelect.value = 'private';
+                    } else if (v === 'false') {
+                        privacySelect.value = 'public';
+                    } else {
+                        privacySelect.value = 'public';
+                    }
+                    updateTitleIconFromPrivacy();
+                }
+
                 function setPermalink() {
                     const d = dateInput.value || today();
                     const base = window.location.origin + basePath();
@@ -1017,7 +1031,7 @@
                         a.href = `${basePath()}/${encodeURIComponent(user.username)}/${toDisplayDate(e.date)}`;
                         const pval = e.privacy || (e.isPrivate === true || e.isPrivate === 'true' ? 'private' : 'public');
                         const icon = privacyIcon(pval);
-                        a.textContent = `${toDisplayDate(e.date)} — ${icon ? (icon + ' ') : ''}${e.title || 'Untitled'}`;
+                        a.textContent = `${icon ? (icon + ' ') : ''}${toDisplayDate(e.date)} — ${e.title || 'Untitled'}`;
                         a.target = '_blank'; a.rel = 'noopener';
                         const preview = document.createElement('div');
                         preview.className = 'helper';
@@ -1094,14 +1108,14 @@
                             const ownEntry = clientCache.userEntriesByDate[d][0];
                             titleInput.value = ownEntry.title || '';
                             contentInput.value = ownEntry.content || '';
-                            privacySelect.value = String(ownEntry.privacy || (ownEntry.isPrivate === true || ownEntry.isPrivate === 'true' ? 'private' : 'public')).toLowerCase();
+                            setPrivacyValueSafe(ownEntry.privacy || (ownEntry.isPrivate === true || ownEntry.isPrivate === 'true' ? 'private' : 'public'));
                             ok = true; currentHasEntry = true;
                         } else {
                             const own = await apiGet({ action: 'getUserDiaryEntry', userId: user.id, date: d });
                             if (own.success && own.entry) {
                                 titleInput.value = own.entry.title || '';
                                 contentInput.value = own.entry.content || '';
-                                privacySelect.value = String(own.entry.privacy || (own.entry.isPrivate === true || own.entry.isPrivate === 'true' ? 'private' : 'public')).toLowerCase();
+                                setPrivacyValueSafe(own.entry.privacy || (own.entry.isPrivate === true || own.entry.isPrivate === 'true' ? 'private' : 'public'));
                                 ok = true; currentHasEntry = true;
                             } else {
                                 // Fallback to public view if this date is public and username/date requested directly
@@ -1110,7 +1124,7 @@
                                     if (pub.success && pub.entry) {
                                         titleInput.value = pub.entry.title || '';
                                         contentInput.value = pub.entry.content || '';
-                                        privacySelect.value = String(pub.entry.privacy || 'public').toLowerCase();
+                                        setPrivacyValueSafe(pub.entry.privacy || 'public');
                                         currentHasEntry = true;
                                         ok = true;
                                     }
@@ -1222,9 +1236,9 @@
                 node.querySelector('#btn-save').addEventListener('click', save);
                 node.querySelector('#btn-update').addEventListener('click', update);
                 node.querySelector('#btn-delete').addEventListener('click', remove);
-                dateInput.addEventListener('change', () => { setPermalink(); load(false); });
-                node.querySelector('#btn-prev-day').addEventListener('click', () => { dateInput.value = addDaysIso(dateInput.value || today(), -1); setPermalink(); load(false); });
-                node.querySelector('#btn-next-day').addEventListener('click', () => { dateInput.value = addDaysIso(dateInput.value || today(), 1); setPermalink(); load(false); });
+                dateInput.addEventListener('change', async () => { setPermalink(); await load(false); updateTitleIconFromPrivacy(); });
+                node.querySelector('#btn-prev-day').addEventListener('click', async () => { dateInput.value = addDaysIso(dateInput.value || today(), -1); setPermalink(); await load(false); updateTitleIconFromPrivacy(); });
+                node.querySelector('#btn-next-day').addEventListener('click', async () => { dateInput.value = addDaysIso(dateInput.value || today(), 1); setPermalink(); await load(false); updateTitleIconFromPrivacy(); });
                 btnRefresh.addEventListener('click', () => { load(true); });
 
                 // Page unload protection - save before leaving
