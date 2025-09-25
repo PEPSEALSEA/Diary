@@ -391,14 +391,21 @@
             function hide(elm) { elm.style.display = 'none'; }
             function hideOverlay() { const o = q('#app-overlay'); if (o) o.style.display = 'none'; }
 
-            function toast(text, ok) {
+            let __lastToast = { text: '', time: 0 };
+            function toast(text, ok, force) {
                 const host = q('#toast-container') || (() => { const d = document.createElement('div'); d.id = 'toast-container'; document.body.appendChild(d); return d; })();
+                const now = Date.now();
+                const msgText = String(text || '');
+                if (!force && __lastToast.text === msgText && (now - __lastToast.time) < 1500) {
+                    return null;
+                }
+                __lastToast = { text: msgText, time: now };
                 const t = document.createElement('div');
                 t.className = 'toast ' + (ok ? 'success' : 'error');
                 t.setAttribute('role', 'status');
                 t.setAttribute('aria-live', 'polite');
                 const content = document.createElement('div');
-                content.textContent = String(text || '');
+                content.textContent = msgText;
                 const bar = document.createElement('div');
                 bar.className = 'bar';
                 t.appendChild(content);
@@ -682,7 +689,7 @@
                 const btnEdit = node.querySelector('#btn-edit');
                 const btnRefresh = node.querySelector('#btn-refresh');
 
-                function setMsg(text, ok) { try { toast(text, ok); } catch (e) {} msg.textContent = ''; msg.style.display = 'none'; }
+                function setMsg(text, ok, quiet) { try { if (!quiet) toast(text, ok); } catch (e) {} msg.textContent = ''; msg.style.display = 'none'; }
                 function clearMsg() { msg.textContent = ''; msg.style.display = 'none'; }
 
                 function setPermalink() {
@@ -963,7 +970,7 @@
                             privacySelect.value = 'public';
                             currentHasEntry = false;
                             lastSavedSnapshot = { title: '', content: '', privacy: 'public', date: d };
-                            setMsg('No entry for ' + toDisplayDate(d), false);
+                            setMsg('No entry for ' + toDisplayDate(d), false, true);
                             return;
                         }
                         // Use private/self endpoint first
@@ -998,7 +1005,7 @@
                         if (seq !== currentLoadSeq) return; // ignore stale response
                         lastSavedSnapshot = { title: titleInput.value, content: contentInput.value, privacy: privacySelect.value, date: d };
                         if (ok) {
-                            setMsg('Loaded entry for ' + toDisplayDate(d), true);
+                            setMsg('Loaded entry for ' + toDisplayDate(d), true, true);
                             if (clientCache.userEmptyDates) clientCache.userEmptyDates.delete(d);
                         }
                         else {
@@ -1006,7 +1013,7 @@
                             contentInput.value = '';
                             privacySelect.value = 'public';
                             if (clientCache.userEmptyDates) clientCache.userEmptyDates.add(d);
-                            setMsg('No entry for ' + toDisplayDate(d), false);
+                            setMsg('No entry for ' + toDisplayDate(d), false, true);
                         }
                     } catch (e) { setMsg(e.message, false); }
                 }
@@ -1108,7 +1115,7 @@
                 });
 
                 // Initial quick load of today's entry in view mode
-                setMsg('Loading…', true);
+                setMsg('Loading…', true, true);
                 load(false).finally(() => { applyEditMode(); hideOverlay(); });
 
                 // Prefetch all user entries once in background
@@ -1155,7 +1162,7 @@
     `);
 
                 const msg = node.querySelector('#pub-msg');
-                function setMsg(text, ok) { try { toast(text, ok); } catch (e) {} msg.textContent = ''; msg.style.display = 'none'; }
+                function setMsg(text, ok, quiet) { try { if (!quiet) toast(text, ok); } catch (e) {} msg.textContent = ''; msg.style.display = 'none'; }
                 let currentLoadSeq = 0;
 
                 async function renderFromCacheOrFetch(force) {
@@ -1178,7 +1185,7 @@
 
                 async function loadPublic(force) {
                     const seq = ++currentLoadSeq;
-                    setMsg('Loading…', true);
+                    setMsg('Loading…', true, true);
                     try {
                         const servedFromCache = await renderFromCacheOrFetch(force);
                         if (!servedFromCache) {
@@ -1187,12 +1194,12 @@
                             if (res.success && res.entry) {
                                 node.querySelector('#pub-title').textContent = res.entry.title || '';
                                 node.querySelector('#pub-content').textContent = res.entry.content || '';
-                                setMsg('Public entry', true);
+                                setMsg('Public entry', true, true);
                             } else {
                                 const needLogin = /not authorized|private/i.test(String(res.error || ''));
                                 const link = basePath() + '/';
                                 const ask = needLogin ? ' Please login to see friend-only posts.' : '';
-                                setMsg((res.error || 'Not found or private') + ask, false);
+                                setMsg((res.error || 'Not found or private') + ask, false, true);
                                 if (needLogin && !auth.user) {
                                     const hint = document.createElement('div');
                                     hint.className = 'helper';
