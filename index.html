@@ -769,15 +769,21 @@
                     if (!force && !editMode) return;
                     if (!force && !isDirty()) return;
                     const hasContent = (contentInput.value || '').trim().length > 0;
-                    if (!hasContent) return;
+                    const hasTitle = (titleInput.value || '').trim().length > 0;
+                    const creatingNewEmpty = !currentHasEntry && !hasTitle && !hasContent;
+                    if (!force && creatingNewEmpty) return;
+                    if (creatingNewEmpty && force) {
+                        // Leaving edit mode with nothing typed and no existing entry: do nothing
+                        return;
+                    }
                     autosaveInFlight = true;
                     try {
-                        if (currentHasEntry) { 
-                            await update(); 
+                        if (currentHasEntry) {
+                            await update();
                             if (force) setMsg('Auto-saved at ' + new Date().toLocaleTimeString(), true);
-                        } else { 
-                            await save(); 
-                            currentHasEntry = true; 
+                        } else {
+                            await save();
+                            currentHasEntry = true;
                             if (force) setMsg('Auto-saved at ' + new Date().toLocaleTimeString(), true);
                         }
                         lastSavedSnapshot = { title: titleInput.value, content: contentInput.value, privacy: privacySelect.value, date: dateInput.value || today() };
