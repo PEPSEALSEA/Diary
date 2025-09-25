@@ -746,7 +746,7 @@
                     const autosaveIndicator = q('#autosave-indicator', node);
                     if (editMode) {
                         autosaveIndicator.style.display = 'block';
-                        if (!autosaveTimer) autosaveTimer = setInterval(tryAutoSave, 5000);
+                        if (!autosaveTimer) autosaveTimer = setInterval(() => tryAutoSave(false, false), 5000);
                         if (!statusUpdateTimer) statusUpdateTimer = setInterval(updateAutosaveStatus, 1000);
                     } else {
                         autosaveIndicator.style.display = 'none';
@@ -758,7 +758,7 @@
                     const wasEditing = editMode;
                     editMode = !editMode;
                     if (wasEditing && !editMode) {
-                        await tryAutoSave(true);
+                        await tryAutoSave(true, true);
                     }
                     applyEditMode();
                 });
@@ -787,7 +787,7 @@
                     }
                 }
 
-                async function tryAutoSave(force) {
+                async function tryAutoSave(force, showBusy) {
                     if (autosaveInFlight) return;
                     if (!force && !editMode) return;
                     if (!force && !isDirty()) return;
@@ -802,10 +802,10 @@
                     autosaveInFlight = true;
                     try {
                         if (currentHasEntry) {
-                            await update(false);
+                            await update(!!showBusy);
                             if (force) setMsg('Auto-saved at ' + new Date().toLocaleTimeString(), true);
                         } else {
-                            await save(false);
+                            await save(!!showBusy);
                             currentHasEntry = true;
                             if (force) setMsg('Auto-saved at ' + new Date().toLocaleTimeString(), true);
                         }
@@ -1131,7 +1131,7 @@
                         e.preventDefault();
                         e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
                         // Try to save synchronously (this might not work in all browsers)
-                        tryAutoSave(true);
+                        tryAutoSave(true, false);
                         return e.returnValue;
                     }
                 });
