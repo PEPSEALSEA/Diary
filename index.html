@@ -429,9 +429,11 @@
                 if (v === 'public' || v === 'friend' || v === 'private') return v;
                 if (v === 'true') return 'private';
                 if (v === 'false') return 'public';
+                const lv = (legacyIsPrivate !== undefined && legacyIsPrivate !== null) ? String(legacyIsPrivate).toLowerCase() : null;
+                if (lv === 'public' || lv === 'friend' || lv === 'private') return lv;
                 if (typeof legacyIsPrivate === 'boolean') return legacyIsPrivate ? 'private' : 'public';
-                if (legacyIsPrivate === 'true') return 'private';
-                if (legacyIsPrivate === 'false') return 'public';
+                if (lv === 'true') return 'private';
+                if (lv === 'false') return 'public';
                 if (legacyIsPrivate === true) return 'private';
                 if (legacyIsPrivate === false) return 'public';
                 return 'public';
