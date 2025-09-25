@@ -424,6 +424,18 @@
                 if (v === 'private') return '🔒';
                 return '';
             }
+            function normalizePrivacyValue(privacyValue, legacyIsPrivate) {
+                const v = (privacyValue !== undefined && privacyValue !== null) ? String(privacyValue).toLowerCase() : null;
+                if (v === 'public' || v === 'friend' || v === 'private') return v;
+                if (v === 'true') return 'private';
+                if (v === 'false') return 'public';
+                if (typeof legacyIsPrivate === 'boolean') return legacyIsPrivate ? 'private' : 'public';
+                if (legacyIsPrivate === 'true') return 'private';
+                if (legacyIsPrivate === 'false') return 'public';
+                if (legacyIsPrivate === true) return 'private';
+                if (legacyIsPrivate === false) return 'public';
+                return 'public';
+            }
             function addDaysIso(iso, delta) {
                 const d = new Date(toIsoDate(iso));
                 d.setDate(d.getDate() + delta);
@@ -978,7 +990,7 @@
                         if (count > 0) {
                             const a = document.createElement('a'); a.className = 'link truncate'; a.href = `${basePath()}/${encodeURIComponent(user.username)}/${toDisplayDate(dstr)}`; a.target = '_blank'; a.rel = 'noopener';
                             const first = list[0];
-                            const pval = first.privacy || (first.isPrivate === true || first.isPrivate === 'true' ? 'private' : 'public');
+                            const pval = normalizePrivacyValue(first.privacy, first.isPrivate);
                             const label = pval === 'friend' ? ' (friend)' : (pval === 'private' ? ' (private)' : '');
                             a.textContent = (first.title || 'Untitled') + label;
                             a.title = (first.title || 'Untitled') + label;
@@ -1029,7 +1041,7 @@
                         const a = document.createElement('a');
                         a.className = 'link';
                         a.href = `${basePath()}/${encodeURIComponent(user.username)}/${toDisplayDate(e.date)}`;
-                        const pval = e.privacy || (e.isPrivate === true || e.isPrivate === 'true' ? 'private' : 'public');
+                        const pval = normalizePrivacyValue(e.privacy, e.isPrivate);
                         const icon = privacyIcon(pval);
                         a.textContent = `${icon ? (icon + ' ') : ''}${toDisplayDate(e.date)} — ${e.title || 'Untitled'}`;
                         a.target = '_blank'; a.rel = 'noopener';
