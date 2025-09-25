@@ -224,6 +224,49 @@
             text-align: center;
             box-shadow: 0 10px 30px rgba(0, 0, 0, .5)
         }
+        #toast-container {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 10000;
+            pointer-events: none;
+        }
+        .toast {
+            pointer-events: auto;
+            background: linear-gradient(180deg, var(--panel), var(--panel-2));
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 10px 14px;
+            color: var(--text);
+            min-width: 260px;
+            max-width: 360px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+            position: relative;
+            opacity: 0;
+            transform: translateY(-8px);
+            animation: toast-in 160ms ease-out forwards;
+        }
+        .toast.success { border-color: rgba(16,185,129,.35); }
+        .toast.error { border-color: rgba(239,68,68,.35); }
+        .toast .bar {
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            height: 3px;
+            background: var(--accent);
+            width: 100%;
+            transform-origin: left;
+            animation: toast-bar 3s linear forwards;
+        }
+        .toast.error .bar { background: var(--danger); }
+        .toast.success .bar { background: var(--ok); }
+        .toast.out { animation: toast-out 140ms ease-in forwards; }
+        @keyframes toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes toast-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-8px); } }
+        @keyframes toast-bar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
     </style>
 </head>
 
@@ -249,6 +292,7 @@
             <div class="helper">Preparing your diary</div>
         </div>
     </div>
+    <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
     <script>
         (function () {
@@ -346,6 +390,30 @@
             function show(elm) { elm.style.display = ''; }
             function hide(elm) { elm.style.display = 'none'; }
             function hideOverlay() { const o = q('#app-overlay'); if (o) o.style.display = 'none'; }
+
+            function toast(text, ok) {
+                const host = q('#toast-container') || (() => { const d = document.createElement('div'); d.id = 'toast-container'; document.body.appendChild(d); return d; })();
+                const t = document.createElement('div');
+                t.className = 'toast ' + (ok ? 'success' : 'error');
+                t.setAttribute('role', 'status');
+                t.setAttribute('aria-live', 'polite');
+                const content = document.createElement('div');
+                content.textContent = String(text || '');
+                const bar = document.createElement('div');
+                bar.className = 'bar';
+                t.appendChild(content);
+                t.appendChild(bar);
+                host.appendChild(t);
+                let removed = false;
+                function removeToast() {
+                    if (removed) return; removed = true;
+                    t.classList.add('out');
+                    setTimeout(() => { if (t.parentNode) t.parentNode.removeChild(t); }, 180);
+                }
+                const timer = setTimeout(removeToast, 3000);
+                t.addEventListener('click', () => { clearTimeout(timer); removeToast(); });
+                return t;
+            }
 
             function render() {
                 const mount = q('#route-view');
@@ -614,7 +682,7 @@
                 const btnEdit = node.querySelector('#btn-edit');
                 const btnRefresh = node.querySelector('#btn-refresh');
 
-                function setMsg(text, ok) { msg.textContent = text; msg.style.display = 'block'; msg.className = 'notice ' + (ok ? 'success' : 'error'); }
+                function setMsg(text, ok) { try { toast(text, ok); } catch (e) {} msg.textContent = ''; msg.style.display = 'none'; }
                 function clearMsg() { msg.textContent = ''; msg.style.display = 'none'; }
 
                 function setPermalink() {
@@ -1081,7 +1149,7 @@
     `);
 
                 const msg = node.querySelector('#pub-msg');
-                function setMsg(text, ok) { msg.textContent = text; msg.style.display = 'block'; msg.className = 'notice ' + (ok ? 'success' : 'error'); }
+                function setMsg(text, ok) { try { toast(text, ok); } catch (e) {} msg.textContent = ''; msg.style.display = 'none'; }
                 let currentLoadSeq = 0;
 
                 async function renderFromCacheOrFetch(force) {
