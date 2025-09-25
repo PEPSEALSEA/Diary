@@ -356,6 +356,12 @@
                 if (m) return m[3] + '-' + m[2] + '-' + m[1];
                 return fmtDate(maybe);
             }
+            function privacyIcon(p) {
+                const v = String(p || '').toLowerCase();
+                if (v === 'friend') return '★';
+                if (v === 'private') return '🔒';
+                return '';
+            }
             function addDaysIso(iso, delta) {
                 const d = new Date(toIsoDate(iso));
                 d.setDate(d.getDate() + delta);
@@ -589,7 +595,7 @@
               <button id="btn-refresh" class="ghost">Refresh</button>
             </div>
             <div class="spacer"></div>
-            <label>Title</label>
+            <label>Title <span id="title-privacy-icon" class="helper" style="margin-left:6px"></span></label>
             <input id="diary-title" placeholder="Optional title" />
             <div class="spacer"></div>
             <label>Content</label>
@@ -704,9 +710,18 @@
                 const secCalendar = node.querySelector('#section-calendar');
                 const btnEdit = node.querySelector('#btn-edit');
                 const btnRefresh = node.querySelector('#btn-refresh');
+                const titlePrivacyIcon = node.querySelector('#title-privacy-icon');
 
                 function setMsg(text, ok, quiet) { try { if (!quiet) toast(text, ok); } catch (e) {} msg.textContent = ''; msg.style.display = 'none'; }
                 function clearMsg() { msg.textContent = ''; msg.style.display = 'none'; }
+
+                function updateTitleIconFromPrivacy() {
+                    const icon = privacyIcon(privacySelect.value);
+                    if (titlePrivacyIcon) {
+                        titlePrivacyIcon.textContent = icon;
+                        titlePrivacyIcon.title = (privacySelect.value || 'public');
+                    }
+                }
 
                 function setPermalink() {
                     const d = dateInput.value || today();
@@ -716,12 +731,14 @@
                     permalink.textContent = permalink.href;
                 }
                 setPermalink();
+                updateTitleIconFromPrivacy();
 
                 // Tabs
                 function showEditor() { secEditor.style.display = ''; secCalendar.style.display = 'none'; tabEditor.classList.remove('ghost'); tabCalendar.classList.add('ghost'); }
                 function showCalendar() { secEditor.style.display = 'none'; secCalendar.style.display = ''; tabEditor.classList.add('ghost'); tabCalendar.classList.remove('ghost'); }
                 tabEditor.addEventListener('click', showEditor);
                 tabCalendar.addEventListener('click', showCalendar);
+                privacySelect.addEventListener('change', updateTitleIconFromPrivacy);
 
                 // Edit mode toggle (read-only by default)
                 let editMode = false;
@@ -951,8 +968,14 @@
                             a.className = 'link';
                             a.href = `${basePath()}/${encodeURIComponent(user.username)}/${toDisplayDate(e.date)}`;
                             const pval = e.privacy || (e.isPrivate === true || e.isPrivate === 'true' ? 'private' : 'public');
-                            const label = pval === 'friend' ? '(friend)' : (pval === 'private' ? '(private)' : '');
-                            a.textContent = `${toDisplayDate(e.date)} — ${e.title || 'Untitled'} ${label}`;
+                            const icon = privacyIcon(pval);
+                            a.textContent = `${toDisplayDate(e.date)} — ${icon ? (icon + ' ') : ''}${e.title || 'Untitled'}`;
+                            const a = document.createElement('a');
+                            a.className = 'link';
+                            a.href = `${basePath()}/${encodeURIComponent(user.username)}/${toDisplayDate(e.date)}`;
+                            const pval = e.privacy || (e.isPrivate === true || e.isPrivate === 'true' ? 'private' : 'public');
+                            const icon = privacyIcon(pval);
+                            a.textContent = `${toDisplayDate(e.date)} — ${icon ? (icon + ' ') : ''}${e.title || 'Untitled'}`;
                             a.target = '_blank'; a.rel = 'noopener';
 
                             const preview = document.createElement('div');
@@ -1013,6 +1036,8 @@
                                     if (pub.success && pub.entry) {
                                         titleInput.value = pub.entry.title || '';
                                         contentInput.value = pub.entry.content || '';
+                                        privacySelect.value = pub.entry.privacy || 'public';
+                                        currentHasEntry = true;
                                         ok = true;
                                     }
                                 } catch (e) { }
@@ -1031,6 +1056,7 @@
                             if (clientCache.userEmptyDates) clientCache.userEmptyDates.add(d);
                             setMsg('No entry for ' + toDisplayDate(d), false, true);
                         }
+                        updateTitleIconFromPrivacy();
                     } catch (e) { setMsg(e.message, false); }
                 }
 
@@ -1057,6 +1083,7 @@
                             clientCache.userEntriesByDate[payload.date] = [entry];
                             if (clientCache.userEmptyDates) clientCache.userEmptyDates.delete(payload.date);
                             currentHasEntry = true;
+                            updateTitleIconFromPrivacy();
                             // re-render dependents
                             renderCalendar();
                             loadRecent();
@@ -1087,6 +1114,7 @@
                             }
                             clientCache.userEntriesByDate[payload.date] = [{ date: payload.date, title: payload.title, content: payload.content, privacy: payload.privacy }];
                             if (clientCache.userEmptyDates) clientCache.userEmptyDates.delete(payload.date);
+                            updateTitleIconFromPrivacy();
                             renderCalendar();
                             loadRecent();
                         }
