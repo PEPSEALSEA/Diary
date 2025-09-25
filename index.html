@@ -937,8 +937,8 @@
                                 a.className = 'link';
                                 a.href = `${basePath()}/${encodeURIComponent(user.username)}/${toDisplayDate(e.date)}`;
                                 const pval = e.privacy || (e.isPrivate === true || e.isPrivate === 'true' ? 'private' : 'public');
-                                const label = pval === 'friend' ? '(friend)' : (pval === 'private' ? '(private)' : '');
-                                a.textContent = `${toDisplayDate(e.date)} — ${e.title || 'Untitled'} ${label}`;
+                                const icon = privacyIcon(pval);
+                                a.textContent = `${toDisplayDate(e.date)} — ${icon ? (icon + ' ') : ''}${e.title || 'Untitled'}`;
                                 a.target = '_blank'; a.rel = 'noopener';
 
                                 const preview = document.createElement('div');
@@ -964,12 +964,6 @@
                             const item = document.createElement('div');
                             item.style.marginBottom = '10px';
 
-                            const a = document.createElement('a');
-                            a.className = 'link';
-                            a.href = `${basePath()}/${encodeURIComponent(user.username)}/${toDisplayDate(e.date)}`;
-                            const pval = e.privacy || (e.isPrivate === true || e.isPrivate === 'true' ? 'private' : 'public');
-                            const icon = privacyIcon(pval);
-                            a.textContent = `${toDisplayDate(e.date)} — ${icon ? (icon + ' ') : ''}${e.title || 'Untitled'}`;
                             const a = document.createElement('a');
                             a.className = 'link';
                             a.href = `${basePath()}/${encodeURIComponent(user.username)}/${toDisplayDate(e.date)}`;
