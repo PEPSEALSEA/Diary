@@ -279,6 +279,7 @@
                 get user() { return storage.get('diary_user'); },
                 set user(u) { if (u) storage.set('diary_user', u, 30); else storage.del('diary_user'); }
             };
+            function viewerEmail() { return (auth.user && auth.user.email) ? auth.user.email : ''; }
 
             function q(sel, root = document) { return root.querySelector(sel); }
             function el(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstChild; }
@@ -323,13 +324,21 @@
 
             async function apiGet(params) {
                 if (!API_URL) { throw new Error('API URL not configured'); }
-                const qs = new URLSearchParams(params).toString();
+                const merged = Object.assign({}, params);
+                if (merged && (merged.action === 'getDiaryEntry' || merged.action === 'getPublicDiaryEntries')) {
+                    if (viewerEmail()) merged.viewerEmail = viewerEmail();
+                }
+                const qs = new URLSearchParams(merged).toString();
                 const res = await fetch(API_URL + '?' + qs, { method: 'GET' });
                 return res.json();
             }
             async function apiPost(params) {
                 if (!API_URL) { throw new Error('API URL not configured'); }
-                const form = new URLSearchParams(params);
+                const merged = Object.assign({}, params);
+                if (merged && (merged.action === 'getDiaryEntry' || merged.action === 'getPublicDiaryEntries')) {
+                    if (viewerEmail()) merged.viewerEmail = viewerEmail();
+                }
+                const form = new URLSearchParams(merged);
                 const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString() });
                 return res.json();
             }
@@ -461,68 +470,6 @@
                     } catch (e) { msg.textContent = e.message; msg.className = 'helper error'; }
                 });
 
-                // Friends management UI
-                const friendsCard = el(`
-          <div class="card" style="margin-top:16px">
-            <h3>Friends</h3>
-            <div id="friends-list" class="helper">Loading…</div>
-            <div class="spacer"></div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <input id="friend-identifier" placeholder="email, username, or userId" style="flex:1 1 240px" />
-              <button id="btn-add-friend">Add</button>
-              <button id="btn-refresh-friends" class="ghost">Refresh</button>
-            </div>
-          </div>
-        `);
-                node.querySelector('.col:last-child .card').after(friendsCard);
-
-                async function loadFriends() {
-                    const wrap = node.querySelector('#friends-list');
-                    try {
-                        const res = await apiGet({ action: 'listFriends', ownerId: user.id });
-                        if (!res.success) { wrap.textContent = res.error || 'Failed to load'; return; }
-                        const list = document.createElement('div');
-                        if (!res.friends || res.friends.length === 0) { wrap.textContent = 'No friends yet.'; return; }
-                        res.friends.forEach(f => {
-                            const row = document.createElement('div');
-                            row.style.display = 'flex';
-                            row.style.justifyContent = 'space-between';
-                            row.style.alignItems = 'center';
-                            row.style.marginBottom = '8px';
-                            const left = document.createElement('div');
-                            left.className = 'helper';
-                            left.textContent = (f.friendEmail || '') + (f.friendUserId ? (f.friendEmail ? ' · ' : '') + f.friendUserId : '');
-                            const btn = document.createElement('button');
-                            btn.className = 'danger';
-                            btn.textContent = 'Remove';
-                            btn.addEventListener('click', async () => {
-                                try {
-                                    const res = await apiPost({ action: 'removeFriend', ownerId: user.id, friendIdentifier: f.friendUserId || f.friendEmail });
-                                    if (res.success) loadFriends();
-                                } catch (e) {}
-                            });
-                            row.appendChild(left);
-                            row.appendChild(btn);
-                            list.appendChild(row);
-                        });
-                        wrap.innerHTML = '';
-                        wrap.appendChild(list);
-                    } catch (e) { wrap.textContent = e.message; }
-                }
-
-                node.querySelector('#btn-add-friend').addEventListener('click', async () => {
-                    const input = node.querySelector('#friend-identifier');
-                    const val = input.value.trim();
-                    if (!val) return;
-                    try {
-                        const res = await apiPost({ action: 'addFriend', ownerId: user.id, friendIdentifier: val });
-                        if (res.success) { input.value = ''; loadFriends(); }
-                    } catch (e) {}
-                });
-                node.querySelector('#btn-refresh-friends').addEventListener('click', loadFriends);
-
-                loadFriends();
-
                 return node;
             }
 
@@ -595,9 +542,64 @@
             <h3>Recent entries</h3>
             <div id="recent-list" class="helper">Loading…</div>
           </div>
+          <div class="card" style="margin-top:16px">
+            <h3>Friends</h3>
+            <div id="friends-list" class="helper">Loading…</div>
+            <div class="spacer"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <input id="friend-identifier" placeholder="email, username, or userId" style="flex:1 1 240px" />
+              <button id="btn-add-friend">Add</button>
+              <button id="btn-refresh-friends" class="ghost">Refresh</button>
+            </div>
+          </div>
         </div>
       </div>
     `);
+                // Friends management
+                async function loadFriends() {
+                    const wrap = node.querySelector('#friends-list');
+                    try {
+                        const res = await apiGet({ action: 'listFriends', ownerId: user.id });
+                        if (!res.success) { wrap.textContent = res.error || 'Failed to load'; return; }
+                        if (!res.friends || res.friends.length === 0) { wrap.textContent = 'No friends yet.'; return; }
+                        const list = document.createElement('div');
+                        res.friends.forEach(f => {
+                            const row = document.createElement('div');
+                            row.style.display = 'flex';
+                            row.style.justifyContent = 'space-between';
+                            row.style.alignItems = 'center';
+                            row.style.marginBottom = '8px';
+                            const left = document.createElement('div');
+                            left.className = 'helper';
+                            left.textContent = (f.friendEmail || '') + (f.friendUserId ? (f.friendEmail ? ' · ' : '') + f.friendUserId : '');
+                            const btn = document.createElement('button');
+                            btn.className = 'danger';
+                            btn.textContent = 'Remove';
+                            btn.addEventListener('click', async () => {
+                                try {
+                                    const res = await apiPost({ action: 'removeFriend', ownerId: user.id, friendIdentifier: f.friendUserId || f.friendEmail });
+                                    if (res.success) loadFriends();
+                                } catch (e) {}
+                            });
+                            row.appendChild(left);
+                            row.appendChild(btn);
+                            list.appendChild(row);
+                        });
+                        wrap.innerHTML = '';
+                        wrap.appendChild(list);
+                    } catch (e) { wrap.textContent = e.message; }
+                }
+                node.querySelector('#btn-add-friend').addEventListener('click', async () => {
+                    const input = node.querySelector('#friend-identifier');
+                    const val = input.value.trim();
+                    if (!val) return;
+                    try {
+                        const res = await apiPost({ action: 'addFriend', ownerId: user.id, friendIdentifier: val });
+                        if (res.success) { input.value = ''; loadFriends(); }
+                    } catch (e) {}
+                });
+                node.querySelector('#btn-refresh-friends').addEventListener('click', loadFriends);
+                loadFriends();
 
                 const dateInput = node.querySelector('#diary-date');
                 const titleInput = node.querySelector('#diary-title');
@@ -928,7 +930,7 @@
                         else {
                             titleInput.value = '';
                             contentInput.value = '';
-                            privacySelect.value = 'false';
+                            privacySelect.value = 'public';
                             if (clientCache.userEmptyDates) clientCache.userEmptyDates.add(d);
                             setMsg('No entry for ' + toDisplayDate(d), false);
                         }
@@ -1113,7 +1115,21 @@
                                 node.querySelector('#pub-content').textContent = res.entry.content || '';
                                 setMsg('Public entry', true);
                             } else {
-                                setMsg(res.error || 'Not found or private', false);
+                                const needLogin = /not authorized|private/i.test(String(res.error || ''));
+                                const link = basePath() + '/';
+                                const ask = needLogin ? ' Please login to see friend-only posts.' : '';
+                                setMsg((res.error || 'Not found or private') + ask, false);
+                                if (needLogin && !auth.user) {
+                                    const hint = document.createElement('div');
+                                    hint.className = 'helper';
+                                    hint.style.marginTop = '8px';
+                                    const a = document.createElement('a');
+                                    a.href = link;
+                                    a.className = 'link';
+                                    a.textContent = 'Go to Home/Login';
+                                    hint.appendChild(a);
+                                    msg.appendChild(hint);
+                                }
                                 const existing = clientCache.publicByUser.get(username) || { entries: [], byDate: {}, emptyDates: new Set() };
                                 if (!(existing.emptyDates instanceof Set)) existing.emptyDates = new Set();
                                 existing.emptyDates.add(date);
