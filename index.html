@@ -802,17 +802,9 @@
                     }
                 }
 
-                function setPrivacyValueSafe(value) {
-                    const v = String(value || '').toLowerCase();
-                    if (v === 'public' || v === 'friend' || v === 'private') {
-                        privacySelect.value = v;
-                    } else if (v === 'true') {
-                        privacySelect.value = 'private';
-                    } else if (v === 'false') {
-                        privacySelect.value = 'public';
-                    } else {
-                        privacySelect.value = 'public';
-                    }
+                function setPrivacyValueSafe(value, legacyIsPrivate) {
+                    const normalized = normalizePrivacyValue(value, legacyIsPrivate);
+                    privacySelect.value = normalized;
                     updateTitleIconFromPrivacy();
                 }
 
@@ -1122,14 +1114,14 @@
                             const ownEntry = clientCache.userEntriesByDate[d][0];
                             titleInput.value = ownEntry.title || '';
                             contentInput.value = ownEntry.content || '';
-                            setPrivacyValueSafe(ownEntry.privacy || (ownEntry.isPrivate === true || ownEntry.isPrivate === 'true' ? 'private' : 'public'));
+                            setPrivacyValueSafe(ownEntry.privacy, ownEntry.isPrivate);
                             ok = true; currentHasEntry = true;
                         } else {
                             const own = await apiGet({ action: 'getUserDiaryEntry', userId: user.id, date: d });
                             if (own.success && own.entry) {
                                 titleInput.value = own.entry.title || '';
                                 contentInput.value = own.entry.content || '';
-                                setPrivacyValueSafe(own.entry.privacy || (own.entry.isPrivate === true || own.entry.isPrivate === 'true' ? 'private' : 'public'));
+                                setPrivacyValueSafe(own.entry.privacy, own.entry.isPrivate);
                                 ok = true; currentHasEntry = true;
                             } else {
                                 // Fallback to public view if this date is public and username/date requested directly
@@ -1138,7 +1130,7 @@
                                     if (pub.success && pub.entry) {
                                         titleInput.value = pub.entry.title || '';
                                         contentInput.value = pub.entry.content || '';
-                                        setPrivacyValueSafe(pub.entry.privacy || 'public');
+                                        setPrivacyValueSafe(pub.entry.privacy, pub.entry.isPrivate);
                                         currentHasEntry = true;
                                         ok = true;
                                     }
