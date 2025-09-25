@@ -267,6 +267,9 @@
         @keyframes toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes toast-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-8px); } }
         @keyframes toast-bar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+        .highlight { background: rgba(96,165,250,.35); padding: 0 2px; border-radius: 3px; }
+        .pager { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin: 8px 0; }
+        .pager input[type="number"] { width: 72px; }
         /* Auth modal */
         #auth-modal { position: fixed; inset: 0; display: none; place-items: center; background: rgba(5,8,13,.72); z-index: 10001; }
         #auth-modal .auth-box { background: linear-gradient(180deg, var(--panel), var(--panel-2)); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; width: 100%; max-width: 420px; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
@@ -746,6 +749,13 @@
         <div class="col">
           <div class="card">
             <h3>Recent entries</h3>
+            <div id="recent-controls" class="pager" style="display:none">
+              <button id="recent-prev" class="ghost" title="Previous page">◀</button>
+              <span class="helper">Page</span>
+              <input id="recent-page-input" type="number" min="1" value="1" />
+              <span id="recent-page-total" class="helper">/ 1</span>
+              <button id="recent-next" class="ghost" title="Next page">▶</button>
+            </div>
             <div id="recent-list" class="helper">Loading…</div>
           </div>
         </div>
@@ -976,67 +986,82 @@
                 // default to Editor; user can open Calendar tab
                 renderCalendar();
 
+                let recentAll = [];
+                let recentPage = 1;
+                const recentPageSize = 10;
+                const recentWrap = node.querySelector('#recent-list');
+                const recentControls = node.querySelector('#recent-controls');
+                const recentPrev = node.querySelector('#recent-prev');
+                const recentNext = node.querySelector('#recent-next');
+                const recentPageInput = node.querySelector('#recent-page-input');
+                const recentPageTotal = node.querySelector('#recent-page-total');
+
+                function renderRecent() {
+                    const total = recentAll.length;
+                    const totalPages = Math.max(1, Math.ceil(total / recentPageSize));
+                    if (recentPage > totalPages) recentPage = totalPages;
+                    const start = (recentPage - 1) * recentPageSize;
+                    const items = recentAll.slice(start, start + recentPageSize);
+                    if (total === 0) {
+                        recentWrap.textContent = 'No entries yet.';
+                        if (recentControls) recentControls.style.display = 'none';
+                        return;
+                    }
+                    const list = document.createElement('div');
+                    items.forEach(e => {
+                        const item = document.createElement('div');
+                        item.style.marginBottom = '10px';
+                        const a = document.createElement('a');
+                        a.className = 'link';
+                        a.href = `${basePath()}/${encodeURIComponent(user.username)}/${toDisplayDate(e.date)}`;
+                        const pval = e.privacy || (e.isPrivate === true || e.isPrivate === 'true' ? 'private' : 'public');
+                        const icon = privacyIcon(pval);
+                        a.textContent = `${toDisplayDate(e.date)} — ${icon ? (icon + ' ') : ''}${e.title || 'Untitled'}`;
+                        a.target = '_blank'; a.rel = 'noopener';
+                        const preview = document.createElement('div');
+                        preview.className = 'helper';
+                        const text = String(e.content || '').replace(/\s+/g, ' ').trim();
+                        const snippet = text.length > 160 ? text.slice(0, 160) + '…' : text;
+                        preview.textContent = snippet || '—';
+                        item.appendChild(a);
+                        item.appendChild(preview);
+                        list.appendChild(item);
+                    });
+                    recentWrap.innerHTML = '';
+                    recentWrap.appendChild(list);
+                    if (recentControls) recentControls.style.display = '';
+                    if (recentPageInput) recentPageInput.value = String(recentPage);
+                    if (recentPageTotal) recentPageTotal.textContent = '/ ' + String(totalPages);
+                    if (recentPrev) recentPrev.disabled = recentPage <= 1;
+                    if (recentNext) recentNext.disabled = recentPage >= totalPages;
+                }
+
+                if (recentPrev) recentPrev.addEventListener('click', () => { if (recentPage > 1) { recentPage--; renderRecent(); } });
+                if (recentNext) recentNext.addEventListener('click', () => { const totalPages = Math.max(1, Math.ceil(recentAll.length / recentPageSize)); if (recentPage < totalPages) { recentPage++; renderRecent(); } });
+                if (recentPageInput) recentPageInput.addEventListener('change', () => {
+                    let v = parseInt(recentPageInput.value, 10);
+                    if (isNaN(v) || v < 1) v = 1;
+                    const totalPages = Math.max(1, Math.ceil(recentAll.length / recentPageSize));
+                    if (v > totalPages) v = totalPages;
+                    recentPage = v;
+                    renderRecent();
+                });
+
                 async function loadRecent() {
                     try {
                         // Prefer cache if loaded
                         if (clientCache.userLoadedAll && Array.isArray(clientCache.userEntries)) {
-                            const wrap = node.querySelector('#recent-list');
-                            if (clientCache.userEntries.length === 0) { wrap.textContent = 'No entries yet.'; return; }
-                            const list = document.createElement('div');
-                            clientCache.userEntries.slice(0, 20).forEach(e => {
-                                const item = document.createElement('div');
-                                item.style.marginBottom = '10px';
-
-                                const a = document.createElement('a');
-                                a.className = 'link';
-                                a.href = `${basePath()}/${encodeURIComponent(user.username)}/${toDisplayDate(e.date)}`;
-                                const pval = e.privacy || (e.isPrivate === true || e.isPrivate === 'true' ? 'private' : 'public');
-                                const icon = privacyIcon(pval);
-                                a.textContent = `${toDisplayDate(e.date)} — ${icon ? (icon + ' ') : ''}${e.title || 'Untitled'}`;
-                                a.target = '_blank'; a.rel = 'noopener';
-
-                                const preview = document.createElement('div');
-                                preview.className = 'helper';
-                                const text = String(e.content || '').replace(/\s+/g, ' ').trim();
-                                const snippet = text.length > 160 ? text.slice(0, 160) + '…' : text;
-                                preview.textContent = snippet || '—';
-
-                                item.appendChild(a);
-                                item.appendChild(preview);
-                                list.appendChild(item);
-                            });
-                            wrap.innerHTML = ''; wrap.appendChild(list);
+                            recentAll = clientCache.userEntries.slice();
+                            recentPage = 1;
+                            renderRecent();
                             return;
                         }
 
                         const res = await apiGet({ action: 'getUserDiaryEntries', userId: user.id });
-                        const wrap = node.querySelector('#recent-list');
-                        if (!res.success) { wrap.textContent = res.error || 'Failed to load'; return; }
-                        if (!res.entries || res.entries.length === 0) { wrap.textContent = 'No entries yet.'; return; }
-                        const list = document.createElement('div');
-                        res.entries.slice(0, 20).forEach(e => {
-                            const item = document.createElement('div');
-                            item.style.marginBottom = '10px';
-
-                            const a = document.createElement('a');
-                            a.className = 'link';
-                            a.href = `${basePath()}/${encodeURIComponent(user.username)}/${toDisplayDate(e.date)}`;
-                            const pval = e.privacy || (e.isPrivate === true || e.isPrivate === 'true' ? 'private' : 'public');
-                            const icon = privacyIcon(pval);
-                            a.textContent = `${toDisplayDate(e.date)} — ${icon ? (icon + ' ') : ''}${e.title || 'Untitled'}`;
-                            a.target = '_blank'; a.rel = 'noopener';
-
-                            const preview = document.createElement('div');
-                            preview.className = 'helper';
-                            const text = String(e.content || '').replace(/\s+/g, ' ').trim();
-                            const snippet = text.length > 160 ? text.slice(0, 160) + '…' : text;
-                            preview.textContent = snippet || '—';
-
-                            item.appendChild(a);
-                            item.appendChild(preview);
-                            list.appendChild(item);
-                        });
-                        wrap.innerHTML = ''; wrap.appendChild(list);
+                        if (!res.success) { recentWrap.textContent = res.error || 'Failed to load'; return; }
+                        recentAll = Array.isArray(res.entries) ? res.entries.slice() : [];
+                        recentPage = 1;
+                        renderRecent();
                     } catch (e) { const wrap = node.querySelector('#recent-list'); wrap.textContent = e.message; }
                 }
 
@@ -1367,43 +1392,147 @@
                 const node = el(`
       <div class="card">
         <h3>Latest public entries</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <input id="pub-search" placeholder="Search title, username or date (DD-MM-YYYY)" style="flex:1 1 260px" />
+          <select id="pub-filter">
+            <option value="all">All</option>
+            <option value="title">Title</option>
+            <option value="username">Username</option>
+            <option value="date">Date</option>
+            <option value="content">Content</option>
+          </select>
+          <button id="pub-apply" class="ghost">Search</button>
+        </div>
+        <div id="pub-pager" class="pager" style="display:none">
+          <button id="pub-prev" class="ghost" title="Previous page">◀</button>
+          <span class="helper">Page</span>
+          <input id="pub-page-input" type="number" min="1" value="1" />
+          <span id="pub-page-total" class="helper">/ 1</span>
+          <button id="pub-next" class="ghost" title="Next page">▶</button>
+        </div>
         <div id="pub-list" class="helper">Loading…</div>
       </div>
     `);
 
+                const listWrap = node.querySelector('#pub-list');
+                const searchInput = node.querySelector('#pub-search');
+                const filterSel = node.querySelector('#pub-filter');
+                const applyBtn = node.querySelector('#pub-apply');
+                const pager = node.querySelector('#pub-pager');
+                const prevBtn = node.querySelector('#pub-prev');
+                const nextBtn = node.querySelector('#pub-next');
+                const pageInput = node.querySelector('#pub-page-input');
+                const pageTotal = node.querySelector('#pub-page-total');
+                const pageSize = 10;
+                let all = [];
+                let filtered = [];
+                let page = 1;
+
+                function escapeRegExp(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
+                function highlight(text, q){
+                    if (!q) return text;
+                    try {
+                        const re = new RegExp(escapeRegExp(q), 'ig');
+                        return String(text).replace(re, m => `<span class="highlight">${m}</span>`);
+                    } catch { return text; }
+                }
+                function normalizeDateQuery(val) {
+                    if (!val) return '';
+                    const iso = toIsoDate(val);
+                    return iso;
+                }
+                function applyFilters() {
+                    const qv = (searchInput.value || '').trim();
+                    const mode = filterSel.value;
+                    if (!qv) { filtered = all.slice(); page = 1; render(); return; }
+                    const qLower = qv.toLowerCase();
+                    const isoMaybe = normalizeDateQuery(qv);
+                    filtered = all.filter(e => {
+                        const title = String(e.title || '');
+                        const content = String(e.content || '');
+                        const username = String(e.username || '');
+                        const date = String(e.date || '');
+                        if (mode === 'title') return title.toLowerCase().includes(qLower);
+                        if (mode === 'username') return username.toLowerCase().includes(qLower);
+                        if (mode === 'content') return content.toLowerCase().includes(qLower);
+                        if (mode === 'date') return date === isoMaybe || toDisplayDate(date) === qv;
+                        return (
+                            title.toLowerCase().includes(qLower) ||
+                            username.toLowerCase().includes(qLower) ||
+                            content.toLowerCase().includes(qLower) ||
+                            date === isoMaybe || toDisplayDate(date) === qv
+                        );
+                    });
+                    page = 1;
+                    render();
+                }
+                function render(){
+                    const data = filtered.length ? filtered : all;
+                    if (!Array.isArray(data) || data.length === 0) {
+                        listWrap.textContent = 'No public entries yet.';
+                        if (pager) pager.style.display = 'none';
+                        return;
+                    }
+                    const total = data.length;
+                    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+                    if (page > totalPages) page = totalPages;
+                    const start = (page - 1) * pageSize;
+                    const items = data.slice(start, start + pageSize);
+                    const list = document.createElement('div');
+                    items.forEach(e => {
+                        const item = document.createElement('div');
+                        item.style.marginBottom = '10px';
+                        item.style.border = '1px solid var(--border)';
+                        item.style.borderRadius = '10px';
+                        item.style.padding = '10px';
+                        item.style.background = 'var(--input)';
+                        const a = document.createElement('a');
+                        a.className = 'link';
+                        a.href = `${basePath()}/${encodeURIComponent(e.username)}/${toDisplayDate(e.date)}`;
+                        const title = `${toDisplayDate(e.date)} – ${e.username}: ${e.title || 'Untitled'}`;
+                        const qv = (searchInput.value || '').trim();
+                        if (qv) {
+                            a.innerHTML = highlight(title, qv);
+                        } else {
+                            a.textContent = title;
+                        }
+                        a.target = '_blank'; a.rel = 'noopener';
+                        const preview = document.createElement('div');
+                        preview.className = 'helper';
+                        preview.style.marginTop = '6px';
+                        const text = String(e.content || '').replace(/\s+/g, ' ').trim();
+                        const snippet = text.length > 160 ? text.slice(0, 160) + '…' : text;
+                        if ((searchInput.value || '').trim()) {
+                            preview.innerHTML = highlight(snippet, (searchInput.value || '').trim());
+                        } else {
+                            preview.textContent = snippet || '—';
+                        }
+                        item.appendChild(a);
+                        item.appendChild(preview);
+                        list.appendChild(item);
+                    });
+                    listWrap.innerHTML = '';
+                    listWrap.appendChild(list);
+                    if (pager) pager.style.display = '';
+                    if (pageInput) pageInput.value = String(page);
+                    if (pageTotal) pageTotal.textContent = '/ ' + String(totalPages);
+                    if (prevBtn) prevBtn.disabled = page <= 1;
+                    if (nextBtn) nextBtn.disabled = page >= totalPages;
+                }
+                if (applyBtn) applyBtn.addEventListener('click', applyFilters);
+                if (searchInput) searchInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') applyFilters(); });
+                if (prevBtn) prevBtn.addEventListener('click', () => { if (page > 1) { page--; render(); } });
+                if (nextBtn) nextBtn.addEventListener('click', () => { const data = filtered.length ? filtered : all; const totalPages = Math.max(1, Math.ceil(data.length / pageSize)); if (page < totalPages) { page++; render(); } });
+                if (pageInput) pageInput.addEventListener('change', () => { let v = parseInt(pageInput.value, 10); if (isNaN(v) || v < 1) v = 1; const data = filtered.length ? filtered : all; const totalPages = Math.max(1, Math.ceil(data.length / pageSize)); if (v > totalPages) v = totalPages; page = v; render(); });
+
                 (async function () {
                     try {
                         const res = await apiGet({ action: 'getPublicDiaryEntries', limit: '50', maxContent: '220', viewerUserId: (auth.user && auth.user.id) ? auth.user.id : '' });
-                        const wrap = node.querySelector('#pub-list');
-                        if (!res.success) { wrap.textContent = res.error || 'Failed to load'; return; }
-                        if (!res.entries || res.entries.length === 0) { wrap.textContent = 'No public entries yet.'; return; }
-                        const list = document.createElement('div');
-                        res.entries.slice(0, 50).forEach(e => {
-                            const item = document.createElement('div');
-                            item.style.marginBottom = '10px';
-                            item.style.border = '1px solid var(--border)';
-                            item.style.borderRadius = '10px';
-                            item.style.padding = '10px';
-                            item.style.background = 'var(--input)';
-
-                            const a = document.createElement('a');
-                            a.className = 'link';
-                            a.href = `${basePath()}/${encodeURIComponent(e.username)}/${toDisplayDate(e.date)}`;
-                            a.textContent = `${toDisplayDate(e.date)} – ${e.username}: ${e.title || 'Untitled'}`;
-                            a.target = '_blank'; a.rel = 'noopener';
-
-                            const preview = document.createElement('div');
-                            preview.className = 'helper';
-                            preview.style.marginTop = '6px';
-                            const text = String(e.content || '').replace(/\s+/g, ' ').trim();
-                            const snippet = text.length > 160 ? text.slice(0, 160) + '…' : text;
-                            preview.textContent = snippet || '—';
-
-                            item.appendChild(a);
-                            item.appendChild(preview);
-                            list.appendChild(item);
-                        });
-                        wrap.innerHTML = ''; wrap.appendChild(list);
+                        if (!res.success) { listWrap.textContent = res.error || 'Failed to load'; return; }
+                        all = Array.isArray(res.entries) ? res.entries.slice(0, 500) : [];
+                        filtered = all.slice();
+                        page = 1;
+                        render();
                     } catch (e) { node.querySelector('#pub-list').textContent = e.message; }
                 })();
 
