@@ -897,7 +897,7 @@
                     const d = dateInput.value || today();
                     const base = window.location.origin + basePath();
                     const display = toDisplayDate(d);
-                    permalink.href = base + '/' + encodeURIComponent(user.username) + '/' + display + '#public';
+                    permalink.href = base + '/' + encodeURIComponent(user.username) + '/' + display;
                     permalink.textContent = permalink.href;
                 }
                 setPermalink();
@@ -1981,7 +1981,7 @@
                         const loginForm = q('#auth-login-form'); if (loginForm) loginForm.style.display = 'none';
                         const regForm = q('#auth-register-form'); if (regForm) regForm.style.display = 'none';
                         const otpView = q('#otp-verify-view'); if (otpView) otpView.style.display = '';
-                        const subtitle = q('#otp-subtitle'); if (subtitle) subtitle.textContent = `We sent a code to ${maskEmail(email)} • ${email}  Change email`;
+                        const subtitle = q('#otp-subtitle'); if (subtitle) subtitle.textContent = `We sent a code to • ${maskEmail(email)}`;
                         const otpMsg = q('#otp-msg'); if (otpMsg) { otpMsg.textContent = 'Enter the 6-digit code from your email.'; otpMsg.className = 'helper'; }
                         const otpInput = q('#otp-input'); if (otpInput) { otpInput.value = ''; otpInput.focus(); }
                     } catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'helper error'; } }
