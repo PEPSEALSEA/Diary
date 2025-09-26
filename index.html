@@ -282,6 +282,13 @@
         #user-menu .item { padding: 10px 12px; color: var(--text); text-decoration: none; display: block; cursor: pointer; }
         #user-menu .item:hover { background: #0c1320; }
         #user-menu .muted { color: var(--muted); font-size: 12px; }
+        /* OTP input styling */
+        input[placeholder="123456"] {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 18px;
+            text-align: center;
+            letter-spacing: 2px;
+        }
     </style>
 </head>
 
@@ -324,6 +331,13 @@
                     <label>Password</label>
                     <input id="modal-login-password" type="password" />
                     <div class="spacer"></div>
+                    <div id="login-otp-section" style="display:none">
+                        <label>OTP Code (6 digits)</label>
+                        <input id="modal-login-otp" placeholder="123456" maxlength="6" />
+                        <div class="spacer"></div>
+                        <button id="modal-btn-resend-otp" class="ghost" style="width:100%">Resend OTP</button>
+                        <div class="spacer"></div>
+                    </div>
                     <button id="modal-btn-login" style="width:100%">Login</button>
                     <div class="spacer"></div>
                     <div class="auth-switch helper">No account? <a id="switch-to-register">Register</a></div>
@@ -340,6 +354,13 @@
                     <label>Password</label>
                     <input id="modal-reg-password" type="password" />
                     <div class="spacer"></div>
+                    <div id="register-otp-section" style="display:none">
+                        <label>OTP Code (6 digits)</label>
+                        <input id="modal-reg-otp" placeholder="123456" maxlength="6" />
+                        <div class="spacer"></div>
+                        <button id="modal-btn-resend-reg-otp" class="ghost" style="width:100%">Resend OTP</button>
+                        <div class="spacer"></div>
+                    </div>
                     <button id="modal-btn-register" style="width:100%">Create account</button>
                     <div class="spacer"></div>
                     <div class="auth-switch helper">Have an account? <a id="switch-to-login">Login</a></div>
@@ -599,6 +620,25 @@
                 const loginForm = q('#auth-login-form');
                 const regForm = q('#auth-register-form');
                 const title = q('#auth-modal-title');
+                
+                // Reset OTP sections
+                const loginOtpSection = q('#login-otp-section');
+                const regOtpSection = q('#register-otp-section');
+                if (loginOtpSection) loginOtpSection.style.display = 'none';
+                if (regOtpSection) regOtpSection.style.display = 'none';
+                
+                // Clear OTP inputs
+                const loginOtpInput = q('#modal-login-otp');
+                const regOtpInput = q('#modal-reg-otp');
+                if (loginOtpInput) loginOtpInput.value = '';
+                if (regOtpInput) regOtpInput.value = '';
+                
+                // Clear messages
+                const loginMsg = q('#modal-auth-msg');
+                const regMsg = q('#modal-auth-msg-reg');
+                if (loginMsg) { loginMsg.textContent = ''; loginMsg.className = 'helper'; }
+                if (regMsg) { regMsg.textContent = ''; regMsg.className = 'helper'; }
+                
                 if (mode === 'register') {
                     if (title) title.textContent = 'Register';
                     if (loginForm) loginForm.style.display = 'none';
@@ -1821,15 +1861,25 @@
             const modalBtnLogin = q('#modal-btn-login'); if (modalBtnLogin) modalBtnLogin.addEventListener('click', async () => {
                 const identifier = (q('#modal-login-identifier').value || '').trim();
                 const password = q('#modal-login-password').value || '';
+                const otp = (q('#modal-login-otp').value || '').trim();
                 const msg = q('#modal-auth-msg'); if (msg) { msg.textContent = ''; msg.className = 'helper'; }
                 showOverlay('Logging in…', 'Please wait');
                 try {
-                    const res = await apiPost({ action: 'login', identifier, password });
+                    const res = await apiPost({ action: 'login', identifier, password, otp: otp || undefined });
                     if (res.success) {
                         auth.user = res.user;
                         closeAuthModal();
                         render();
-                    } else { if (msg) { msg.textContent = res.error || res.message || 'Login failed'; msg.className = 'helper error'; } }
+                    } else { 
+                        if (res.message && res.message.includes('OTP sent')) {
+                            // Show OTP section
+                            const otpSection = q('#login-otp-section');
+                            if (otpSection) otpSection.style.display = '';
+                            if (msg) { msg.textContent = res.message; msg.className = 'helper success'; }
+                        } else {
+                            if (msg) { msg.textContent = res.error || res.message || 'Login failed'; msg.className = 'helper error'; }
+                        }
+                    }
                 } catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'helper error'; } }
                 finally { hideOverlay(); }
             });
@@ -1837,18 +1887,66 @@
                 const email = (q('#modal-reg-email').value || '').trim();
                 const username = (q('#modal-reg-username').value || '').trim();
                 const password = q('#modal-reg-password').value || '';
+                const otp = (q('#modal-reg-otp').value || '').trim();
                 const msg = q('#modal-auth-msg-reg'); if (msg) { msg.textContent = ''; msg.className = 'helper'; }
                 showOverlay('Creating account…', 'Please wait');
                 try {
                     if (username.length < 5 || username.length > 20) { if (msg) { msg.textContent = 'Username must be 5-20 characters'; msg.className = 'helper error'; } hideOverlay(); return; }
-                    const res = await apiPost({ action: 'register', email, username, password });
+                    const res = await apiPost({ action: 'register', email, username, password, otp: otp || undefined });
                     if (res.success) {
                         if (msg) { msg.textContent = 'Registered. You can now login.'; msg.className = 'helper success'; }
                         openAuthModal('login');
-                    } else { if (msg) { msg.textContent = res.error || res.message || 'Registration failed'; msg.className = 'helper error'; } }
+                    } else { 
+                        if (res.message && res.message.includes('OTP sent')) {
+                            // Show OTP section
+                            const otpSection = q('#register-otp-section');
+                            if (otpSection) otpSection.style.display = '';
+                            if (msg) { msg.textContent = res.message; msg.className = 'helper success'; }
+                        } else {
+                            if (msg) { msg.textContent = res.error || res.message || 'Registration failed'; msg.className = 'helper error'; }
+                        }
+                    }
                 } catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'helper error'; } }
                 finally { hideOverlay(); }
             });
+            // Resend OTP functionality
+            const modalBtnResendOtp = q('#modal-btn-resend-otp'); 
+            if (modalBtnResendOtp) modalBtnResendOtp.addEventListener('click', async () => {
+                const identifier = (q('#modal-login-identifier').value || '').trim();
+                const password = q('#modal-login-password').value || '';
+                const msg = q('#modal-auth-msg'); 
+                if (msg) { msg.textContent = ''; msg.className = 'helper'; }
+                showOverlay('Resending OTP…', 'Please wait');
+                try {
+                    const res = await apiPost({ action: 'login', identifier, password });
+                    if (res.message && res.message.includes('OTP sent')) {
+                        if (msg) { msg.textContent = 'OTP resent to your email'; msg.className = 'helper success'; }
+                    } else {
+                        if (msg) { msg.textContent = res.error || res.message || 'Failed to resend OTP'; msg.className = 'helper error'; }
+                    }
+                } catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'helper error'; } }
+                finally { hideOverlay(); }
+            });
+
+            const modalBtnResendRegOtp = q('#modal-btn-resend-reg-otp'); 
+            if (modalBtnResendRegOtp) modalBtnResendRegOtp.addEventListener('click', async () => {
+                const email = (q('#modal-reg-email').value || '').trim();
+                const username = (q('#modal-reg-username').value || '').trim();
+                const password = q('#modal-reg-password').value || '';
+                const msg = q('#modal-auth-msg-reg'); 
+                if (msg) { msg.textContent = ''; msg.className = 'helper'; }
+                showOverlay('Resending OTP…', 'Please wait');
+                try {
+                    const res = await apiPost({ action: 'register', email, username, password });
+                    if (res.message && res.message.includes('OTP sent')) {
+                        if (msg) { msg.textContent = 'OTP resent to your email'; msg.className = 'helper success'; }
+                    } else {
+                        if (msg) { msg.textContent = res.error || res.message || 'Failed to resend OTP'; msg.className = 'helper error'; }
+                    }
+                } catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'helper error'; } }
+                finally { hideOverlay(); }
+            });
+
             window.addEventListener('hashchange', render);
             window.addEventListener('popstate', render);
 
