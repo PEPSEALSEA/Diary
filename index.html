@@ -1885,9 +1885,14 @@
                         // Get email from identifier (could be email or username)
                         let email = identifier;
                         if (!identifier.includes('@')) {
-                            // If it's a username, we need to get the email from the user
-                            // For now, we'll assume the identifier is the email
-                            // In a real implementation, you might need to fetch user details first
+                            // If it's a username, lookup the email
+                            const emailRes = await apiGet({ action: 'getEmailByUsername', username: identifier });
+                            if (!emailRes.success) {
+                                if (msg) { msg.textContent = emailRes.error || 'Username not found'; msg.className = 'helper error'; }
+                                hideOverlay();
+                                return;
+                            }
+                            email = emailRes.email;
                         }
                         
                         const otpRes = await otpApiPost({ action: 'verifyOtp', email, otp });
@@ -1900,9 +1905,14 @@
                         // Send OTP first
                         let email = identifier;
                         if (!identifier.includes('@')) {
-                            // If it's a username, we need to get the email from the user
-                            // For now, we'll assume the identifier is the email
-                            // In a real implementation, you might need to fetch user details first
+                            // If it's a username, lookup the email
+                            const emailRes = await apiGet({ action: 'getEmailByUsername', username: identifier });
+                            if (!emailRes.success) {
+                                if (msg) { msg.textContent = emailRes.error || 'Username not found'; msg.className = 'helper error'; }
+                                hideOverlay();
+                                return;
+                            }
+                            email = emailRes.email;
                         }
                         
                         const otpRes = await otpApiPost({ action: 'sendOtp', email, username: identifier });
@@ -1985,8 +1995,14 @@
                 try {
                     let email = identifier;
                     if (!identifier.includes('@')) {
-                        // If it's a username, we need to get the email from the user
-                        // For now, we'll assume the identifier is the email
+                        // If it's a username, lookup the email
+                        const emailRes = await apiGet({ action: 'getEmailByUsername', username: identifier });
+                        if (!emailRes.success) {
+                            if (msg) { msg.textContent = emailRes.error || 'Username not found'; msg.className = 'helper error'; }
+                            hideOverlay();
+                            return;
+                        }
+                        email = emailRes.email;
                     }
                     
                     const res = await otpApiPost({ action: 'sendOtp', email, username: identifier });
