@@ -1878,10 +1878,15 @@
                 const password = q('#modal-login-password').value || '';
                 const otp = (q('#modal-login-otp').value || '').trim();
                 const msg = q('#modal-auth-msg'); if (msg) { msg.textContent = ''; msg.className = 'helper'; }
-                showOverlay('Logging in…', 'Please wait');
-                try {
-                    // First, try to verify OTP if provided
-                    if (otp) {
+                
+                // Check if OTP section is visible (meaning OTP was already sent)
+                const otpSection = q('#login-otp-section');
+                const isOtpSectionVisible = otpSection && otpSection.style.display !== 'none';
+                
+                if (isOtpSectionVisible && otp) {
+                    // OTP section is visible and user entered OTP - verify and login
+                    showOverlay('Verifying OTP…', 'Please wait');
+                    try {
                         // Get email from identifier (could be email or username)
                         let email = identifier;
                         if (!identifier.includes('@')) {
@@ -1895,14 +1900,30 @@
                             email = emailRes.email;
                         }
                         
+                        console.log('Verifying OTP for login:', { email, otp });
                         const otpRes = await otpApiPost({ action: 'verifyOtp', email, otp });
+                        console.log('OTP verification result:', otpRes);
                         if (!otpRes.success) {
-                            if (msg) { msg.textContent = otpRes.error || 'Invalid OTP'; msg.className = 'helper error'; }
+                            if (msg) { msg.textContent = otpRes.error || 'Invalid or expired OTP'; msg.className = 'helper error'; }
                             hideOverlay();
                             return;
                         }
-                    } else {
-                        // Send OTP first
+                        
+                        // OTP verified, now proceed with login
+                        const res = await apiPost({ action: 'login', identifier, password });
+                        if (res.success) {
+                            auth.user = res.user;
+                            closeAuthModal();
+                            render();
+                        } else {
+                            if (msg) { msg.textContent = res.error || res.message || 'Login failed'; msg.className = 'helper error'; }
+                        }
+                    } catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'helper error'; } }
+                    finally { hideOverlay(); }
+                } else {
+                    // Send OTP first
+                    showOverlay('Sending OTP…', 'Please wait');
+                    try {
                         let email = identifier;
                         if (!identifier.includes('@')) {
                             // If it's a username, lookup the email
@@ -1922,24 +1943,11 @@
                             return;
                         }
                         // Show OTP section
-                        const otpSection = q('#login-otp-section');
                         if (otpSection) otpSection.style.display = '';
-                        if (msg) { msg.textContent = 'OTP sent to your email. Please verify to complete login.'; msg.className = 'helper success'; }
-                        hideOverlay();
-                        return;
-                    }
-                    
-                    // Proceed with login after OTP verification
-                    const res = await apiPost({ action: 'login', identifier, password });
-                    if (res.success) {
-                        auth.user = res.user;
-                        closeAuthModal();
-                        render();
-                    } else {
-                        if (msg) { msg.textContent = res.error || res.message || 'Login failed'; msg.className = 'helper error'; }
-                    }
-                } catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'helper error'; } }
-                finally { hideOverlay(); }
+                        if (msg) { msg.textContent = 'OTP sent to your email. Please enter the OTP and click Login again.'; msg.className = 'helper success'; }
+                    } catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'helper error'; } }
+                    finally { hideOverlay(); }
+                }
             });
             const modalBtnRegister = q('#modal-btn-register'); if (modalBtnRegister) modalBtnRegister.addEventListener('click', async () => {
                 const email = (q('#modal-reg-email').value || '').trim();
@@ -1947,19 +1955,44 @@
                 const password = q('#modal-reg-password').value || '';
                 const otp = (q('#modal-reg-otp').value || '').trim();
                 const msg = q('#modal-auth-msg-reg'); if (msg) { msg.textContent = ''; msg.className = 'helper'; }
-                showOverlay('Creating account…', 'Please wait');
-                try {
-                    if (username.length < 5 || username.length > 20) { if (msg) { msg.textContent = 'Username must be 5-20 characters'; msg.className = 'helper error'; } hideOverlay(); return; }
-                    // First, try to verify OTP if provided
-                    if (otp) {
+                
+                // Check if OTP section is visible (meaning OTP was already sent)
+                const otpSection = q('#register-otp-section');
+                const isOtpSectionVisible = otpSection && otpSection.style.display !== 'none';
+                
+                if (isOtpSectionVisible && otp) {
+                    // OTP section is visible and user entered OTP - verify and register
+                    showOverlay('Verifying OTP…', 'Please wait');
+                    try {
+                        console.log('Verifying OTP for registration:', { email, otp });
                         const otpRes = await otpApiPost({ action: 'verifyOtp', email, otp });
+                        console.log('OTP verification result:', otpRes);
                         if (!otpRes.success) {
-                            if (msg) { msg.textContent = otpRes.error || 'Invalid OTP'; msg.className = 'helper error'; }
+                            if (msg) { msg.textContent = otpRes.error || 'Invalid or expired OTP'; msg.className = 'helper error'; }
                             hideOverlay();
                             return;
                         }
-                    } else {
-                        // Send OTP first
+                        
+                        // OTP verified, now proceed with registration
+                        const res = await apiPost({ action: 'register', email, username, password });
+                        if (res.success) {
+                            if (msg) { msg.textContent = 'Registered. You can now login.'; msg.className = 'helper success'; }
+                            openAuthModal('login');
+                        } else {
+                            if (msg) { msg.textContent = res.error || res.message || 'Registration failed'; msg.className = 'helper error'; }
+                        }
+                    } catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'helper error'; } }
+                    finally { hideOverlay(); }
+                } else {
+                    // Send OTP first
+                    showOverlay('Sending OTP…', 'Please wait');
+                    try {
+                        if (username.length < 5 || username.length > 20) { 
+                            if (msg) { msg.textContent = 'Username must be 5-20 characters'; msg.className = 'helper error'; } 
+                            hideOverlay(); 
+                            return; 
+                        }
+                        
                         const otpRes = await otpApiPost({ action: 'sendOtp', email, username });
                         if (!otpRes.success) {
                             if (msg) { msg.textContent = otpRes.error || 'Failed to send OTP'; msg.className = 'helper error'; }
@@ -1967,23 +2000,11 @@
                             return;
                         }
                         // Show OTP section
-                        const otpSection = q('#register-otp-section');
                         if (otpSection) otpSection.style.display = '';
-                        if (msg) { msg.textContent = 'OTP sent to your email. Please verify to complete registration.'; msg.className = 'helper success'; }
-                        hideOverlay();
-                        return;
-                    }
-                    
-                    // Proceed with registration after OTP verification
-                    const res = await apiPost({ action: 'register', email, username, password });
-                    if (res.success) {
-                        if (msg) { msg.textContent = 'Registered. You can now login.'; msg.className = 'helper success'; }
-                        openAuthModal('login');
-                    } else {
-                        if (msg) { msg.textContent = res.error || res.message || 'Registration failed'; msg.className = 'helper error'; }
-                    }
-                } catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'helper error'; } }
-                finally { hideOverlay(); }
+                        if (msg) { msg.textContent = 'OTP sent to your email. Please enter the OTP and click Register again.'; msg.className = 'helper success'; }
+                    } catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'helper error'; } }
+                    finally { hideOverlay(); }
+                }
             });
             // Resend OTP functionality
             const modalBtnResendOtp = q('#modal-btn-resend-otp'); 
