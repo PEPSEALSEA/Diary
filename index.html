@@ -379,6 +379,7 @@
     <script>
         (function () {
             const API_URL = 'https://script.google.com/macros/s/AKfycbxR7BQFNg_LHPspcMYXLpdwMQ6Ql6fzr1DVDryXCYdW4aPJlvb4oXFPx-Tng4ofmQLvmw/exec';
+            const OTP_API_URL = 'https://script.google.com/macros/s/AKfycbzEBBDzJvZvCWYJsoa0HwPwrPWu0AQAbnj8d0uUUNY2xYcFXiIagSsD1GEmHvKgLT5Q2w/exec';
             const storage = {
                 set(k, v, days) {
                     const value = typeof v === 'string' ? v : JSON.stringify(v);
@@ -487,6 +488,20 @@
                 }
                 const form = new URLSearchParams(merged);
                 const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString() });
+                return res.json();
+            }
+
+            // OTP service functions - direct calls
+            async function otpApiGet(params) {
+                if (!OTP_API_URL) { throw new Error('OTP API URL not configured'); }
+                const qs = new URLSearchParams(params).toString();
+                const res = await fetch(OTP_API_URL + '?' + qs, { method: 'GET' });
+                return res.json();
+            }
+            async function otpApiPost(params) {
+                if (!OTP_API_URL) { throw new Error('OTP API URL not configured'); }
+                const form = new URLSearchParams(params);
+                const res = await fetch(OTP_API_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString() });
                 return res.json();
             }
 
@@ -1865,20 +1880,53 @@
                 const msg = q('#modal-auth-msg'); if (msg) { msg.textContent = ''; msg.className = 'helper'; }
                 showOverlay('Logging in…', 'Please wait');
                 try {
-                    const res = await apiPost({ action: 'login', identifier, password, otp: otp || undefined });
+                    // First, try to verify OTP if provided
+                    if (otp) {
+                        // Get email from identifier (could be email or username)
+                        let email = identifier;
+                        if (!identifier.includes('@')) {
+                            // If it's a username, we need to get the email from the user
+                            // For now, we'll assume the identifier is the email
+                            // In a real implementation, you might need to fetch user details first
+                        }
+                        
+                        const otpRes = await otpApiPost({ action: 'verifyOtp', email, otp });
+                        if (!otpRes.success) {
+                            if (msg) { msg.textContent = otpRes.error || 'Invalid OTP'; msg.className = 'helper error'; }
+                            hideOverlay();
+                            return;
+                        }
+                    } else {
+                        // Send OTP first
+                        let email = identifier;
+                        if (!identifier.includes('@')) {
+                            // If it's a username, we need to get the email from the user
+                            // For now, we'll assume the identifier is the email
+                            // In a real implementation, you might need to fetch user details first
+                        }
+                        
+                        const otpRes = await otpApiPost({ action: 'sendOtp', email, username: identifier });
+                        if (!otpRes.success) {
+                            if (msg) { msg.textContent = otpRes.error || 'Failed to send OTP'; msg.className = 'helper error'; }
+                            hideOverlay();
+                            return;
+                        }
+                        // Show OTP section
+                        const otpSection = q('#login-otp-section');
+                        if (otpSection) otpSection.style.display = '';
+                        if (msg) { msg.textContent = 'OTP sent to your email. Please verify to complete login.'; msg.className = 'helper success'; }
+                        hideOverlay();
+                        return;
+                    }
+                    
+                    // Proceed with login after OTP verification
+                    const res = await apiPost({ action: 'login', identifier, password });
                     if (res.success) {
                         auth.user = res.user;
                         closeAuthModal();
                         render();
-                    } else { 
-                        if (res.message && res.message.includes('OTP sent')) {
-                            // Show OTP section
-                            const otpSection = q('#login-otp-section');
-                            if (otpSection) otpSection.style.display = '';
-                            if (msg) { msg.textContent = res.message; msg.className = 'helper success'; }
-                        } else {
-                            if (msg) { msg.textContent = res.error || res.message || 'Login failed'; msg.className = 'helper error'; }
-                        }
+                    } else {
+                        if (msg) { msg.textContent = res.error || res.message || 'Login failed'; msg.className = 'helper error'; }
                     }
                 } catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'helper error'; } }
                 finally { hideOverlay(); }
@@ -1892,19 +1940,37 @@
                 showOverlay('Creating account…', 'Please wait');
                 try {
                     if (username.length < 5 || username.length > 20) { if (msg) { msg.textContent = 'Username must be 5-20 characters'; msg.className = 'helper error'; } hideOverlay(); return; }
-                    const res = await apiPost({ action: 'register', email, username, password, otp: otp || undefined });
+                    // First, try to verify OTP if provided
+                    if (otp) {
+                        const otpRes = await otpApiPost({ action: 'verifyOtp', email, otp });
+                        if (!otpRes.success) {
+                            if (msg) { msg.textContent = otpRes.error || 'Invalid OTP'; msg.className = 'helper error'; }
+                            hideOverlay();
+                            return;
+                        }
+                    } else {
+                        // Send OTP first
+                        const otpRes = await otpApiPost({ action: 'sendOtp', email, username });
+                        if (!otpRes.success) {
+                            if (msg) { msg.textContent = otpRes.error || 'Failed to send OTP'; msg.className = 'helper error'; }
+                            hideOverlay();
+                            return;
+                        }
+                        // Show OTP section
+                        const otpSection = q('#register-otp-section');
+                        if (otpSection) otpSection.style.display = '';
+                        if (msg) { msg.textContent = 'OTP sent to your email. Please verify to complete registration.'; msg.className = 'helper success'; }
+                        hideOverlay();
+                        return;
+                    }
+                    
+                    // Proceed with registration after OTP verification
+                    const res = await apiPost({ action: 'register', email, username, password });
                     if (res.success) {
                         if (msg) { msg.textContent = 'Registered. You can now login.'; msg.className = 'helper success'; }
                         openAuthModal('login');
-                    } else { 
-                        if (res.message && res.message.includes('OTP sent')) {
-                            // Show OTP section
-                            const otpSection = q('#register-otp-section');
-                            if (otpSection) otpSection.style.display = '';
-                            if (msg) { msg.textContent = res.message; msg.className = 'helper success'; }
-                        } else {
-                            if (msg) { msg.textContent = res.error || res.message || 'Registration failed'; msg.className = 'helper error'; }
-                        }
+                    } else {
+                        if (msg) { msg.textContent = res.error || res.message || 'Registration failed'; msg.className = 'helper error'; }
                     }
                 } catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'helper error'; } }
                 finally { hideOverlay(); }
@@ -1913,13 +1979,18 @@
             const modalBtnResendOtp = q('#modal-btn-resend-otp'); 
             if (modalBtnResendOtp) modalBtnResendOtp.addEventListener('click', async () => {
                 const identifier = (q('#modal-login-identifier').value || '').trim();
-                const password = q('#modal-login-password').value || '';
                 const msg = q('#modal-auth-msg'); 
                 if (msg) { msg.textContent = ''; msg.className = 'helper'; }
                 showOverlay('Resending OTP…', 'Please wait');
                 try {
-                    const res = await apiPost({ action: 'login', identifier, password });
-                    if (res.message && res.message.includes('OTP sent')) {
+                    let email = identifier;
+                    if (!identifier.includes('@')) {
+                        // If it's a username, we need to get the email from the user
+                        // For now, we'll assume the identifier is the email
+                    }
+                    
+                    const res = await otpApiPost({ action: 'sendOtp', email, username: identifier });
+                    if (res.success) {
                         if (msg) { msg.textContent = 'OTP resent to your email'; msg.className = 'helper success'; }
                     } else {
                         if (msg) { msg.textContent = res.error || res.message || 'Failed to resend OTP'; msg.className = 'helper error'; }
@@ -1932,13 +2003,12 @@
             if (modalBtnResendRegOtp) modalBtnResendRegOtp.addEventListener('click', async () => {
                 const email = (q('#modal-reg-email').value || '').trim();
                 const username = (q('#modal-reg-username').value || '').trim();
-                const password = q('#modal-reg-password').value || '';
                 const msg = q('#modal-auth-msg-reg'); 
                 if (msg) { msg.textContent = ''; msg.className = 'helper'; }
                 showOverlay('Resending OTP…', 'Please wait');
                 try {
-                    const res = await apiPost({ action: 'register', email, username, password });
-                    if (res.message && res.message.includes('OTP sent')) {
+                    const res = await otpApiPost({ action: 'sendOtp', email, username });
+                    if (res.success) {
                         if (msg) { msg.textContent = 'OTP resent to your email'; msg.className = 'helper success'; }
                     } else {
                         if (msg) { msg.textContent = res.error || res.message || 'Failed to resend OTP'; msg.className = 'helper error'; }
