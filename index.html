@@ -367,6 +367,21 @@
                     <div class="spacer"></div>
                     <span class="helper" id="modal-auth-msg-reg"></span>
                 </div>
+                <!-- Dedicated OTP verification view -->
+                <div id="otp-verify-view" style="display:none">
+                    <div id="otp-title" style="font-weight:600;margin-bottom:6px">Verify your email</div>
+                    <div class="helper" id="otp-subtitle" style="margin-bottom:12px"></div>
+                    <label>OTP Code (6 digits)</label>
+                    <input id="otp-input" placeholder="123456" maxlength="6" />
+                    <div class="spacer"></div>
+                    <button id="otp-verify-btn" style="width:100%">Verify</button>
+                    <div class="spacer"></div>
+                    <button id="otp-resend-btn" class="ghost" style="width:100%">Resend OTP</button>
+                    <div class="spacer"></div>
+                    <div class="auth-switch helper">Wrong email? <a id="otp-change-email">Change email</a></div>
+                    <div class="spacer"></div>
+                    <span class="helper" id="otp-msg"></span>
+                </div>
             </div>
         </div>
     </div>
@@ -641,6 +656,9 @@
                 const regOtpSection = q('#register-otp-section');
                 if (loginOtpSection) loginOtpSection.style.display = 'none';
                 if (regOtpSection) regOtpSection.style.display = 'none';
+                // Hide dedicated OTP view
+                const otpView = q('#otp-verify-view');
+                if (otpView) otpView.style.display = 'none';
                 
                 // Clear OTP inputs
                 const loginOtpInput = q('#modal-login-otp');
@@ -739,8 +757,20 @@
                         }
                         const res = await apiPost({ action: 'register', email, username, password });
                         if (res.success) {
-                            msg.textContent = 'Registered. You can now login.';
-                            msg.className = 'helper success';
+                            // Auto-login after successful registration
+                            try {
+                                const loginRes = await apiPost({ action: 'login', identifier: email || username, password });
+                                if (loginRes.success) {
+                                    auth.user = loginRes.user;
+                                    render();
+                                } else {
+                                    msg.textContent = (loginRes.error || 'Registered, but auto-login failed. Please try logging in.');
+                                    msg.className = 'helper error';
+                                }
+                            } catch (e) {
+                                msg.textContent = 'Registered, but auto-login failed: ' + e.message;
+                                msg.className = 'helper error';
+                            }
                         } else {
                             msg.textContent = res.error || res.message || 'Registration failed';
                             msg.className = 'helper error';
@@ -1873,6 +1903,9 @@
             const modalClose = q('#auth-close'); if (modalClose) modalClose.addEventListener('click', closeAuthModal);
             const switchToRegister = q('#switch-to-register'); if (switchToRegister) switchToRegister.addEventListener('click', (e) => { e.preventDefault(); openAuthModal('register'); });
             const switchToLogin = q('#switch-to-login'); if (switchToLogin) switchToLogin.addEventListener('click', (e) => { e.preventDefault(); openAuthModal('login'); });
+            // Shared state for OTP flow
+            let __otpFlow = { mode: null, email: '', identifier: '', username: '', password: '' };
+
             const modalBtnLogin = q('#modal-btn-login'); if (modalBtnLogin) modalBtnLogin.addEventListener('click', async () => {
                 const identifier = (q('#modal-login-identifier').value || '').trim();
                 const password = q('#modal-login-password').value || '';
@@ -1921,12 +1954,11 @@
                     } catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'helper error'; } }
                     finally { hideOverlay(); }
                 } else {
-                    // Send OTP first
+                    // Send OTP first and switch to dedicated OTP view
                     showOverlay('Sending OTP…', 'Please wait');
                     try {
                         let email = identifier;
                         if (!identifier.includes('@')) {
-                            // If it's a username, lookup the email
                             const emailRes = await apiGet({ action: 'getEmailByUsername', username: identifier });
                             if (!emailRes.success) {
                                 if (msg) { msg.textContent = emailRes.error || 'Username not found'; msg.className = 'helper error'; }
@@ -1935,16 +1967,23 @@
                             }
                             email = emailRes.email;
                         }
-                        
+
                         const otpRes = await otpApiPost({ action: 'sendOtp', email, username: identifier });
                         if (!otpRes.success) {
                             if (msg) { msg.textContent = otpRes.error || 'Failed to send OTP'; msg.className = 'helper error'; }
                             hideOverlay();
                             return;
                         }
-                        // Show OTP section
-                        if (otpSection) otpSection.style.display = '';
-                        if (msg) { msg.textContent = 'OTP sent to your email. Please enter the OTP and click Login again.'; msg.className = 'helper success'; }
+
+                        // Prepare OTP view
+                        __otpFlow = { mode: 'login', email, identifier, username: identifier, password };
+                        const title = q('#auth-modal-title'); if (title) title.textContent = 'Verify OTP';
+                        const loginForm = q('#auth-login-form'); if (loginForm) loginForm.style.display = 'none';
+                        const regForm = q('#auth-register-form'); if (regForm) regForm.style.display = 'none';
+                        const otpView = q('#otp-verify-view'); if (otpView) otpView.style.display = '';
+                        const subtitle = q('#otp-subtitle'); if (subtitle) subtitle.textContent = `We sent a code to ${maskEmail(email)} • ${email}  Change email`;
+                        const otpMsg = q('#otp-msg'); if (otpMsg) { otpMsg.textContent = 'Enter the 6-digit code from your email.'; otpMsg.className = 'helper'; }
+                        const otpInput = q('#otp-input'); if (otpInput) { otpInput.value = ''; otpInput.focus(); }
                     } catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'helper error'; } }
                     finally { hideOverlay(); }
                 }
@@ -1976,15 +2015,26 @@
                         // OTP verified, now proceed with registration
                         const res = await apiPost({ action: 'register', email, username, password });
                         if (res.success) {
-                            if (msg) { msg.textContent = 'Registered. You can now login.'; msg.className = 'helper success'; }
-                            openAuthModal('login');
+                            // Auto-login after successful registration (no extra OTP required)
+                            try {
+                                const loginRes = await apiPost({ action: 'login', identifier: email || username, password });
+                                if (loginRes.success) {
+                                    auth.user = loginRes.user;
+                                    closeAuthModal();
+                                    render();
+                                } else {
+                                    if (msg) { msg.textContent = (loginRes.error || 'Registered, but auto-login failed. Please login.'); msg.className = 'helper error'; }
+                                }
+                            } catch (e) {
+                                if (msg) { msg.textContent = 'Registered, but auto-login failed: ' + e.message; msg.className = 'helper error'; }
+                            }
                         } else {
                             if (msg) { msg.textContent = res.error || res.message || 'Registration failed'; msg.className = 'helper error'; }
                         }
                     } catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'helper error'; } }
                     finally { hideOverlay(); }
                 } else {
-                    // Send OTP first
+                    // Send OTP first and switch to dedicated OTP view
                     showOverlay('Sending OTP…', 'Please wait');
                     try {
                         if (username.length < 5 || username.length > 20) { 
@@ -1992,19 +2042,89 @@
                             hideOverlay(); 
                             return; 
                         }
-                        
+
                         const otpRes = await otpApiPost({ action: 'sendOtp', email, username });
                         if (!otpRes.success) {
                             if (msg) { msg.textContent = otpRes.error || 'Failed to send OTP'; msg.className = 'helper error'; }
                             hideOverlay();
                             return;
                         }
-                        // Show OTP section
-                        if (otpSection) otpSection.style.display = '';
-                        if (msg) { msg.textContent = 'OTP sent to your email. Please enter the OTP and click Register again.'; msg.className = 'helper success'; }
+
+                        // Prepare OTP view
+                        __otpFlow = { mode: 'register', email, identifier: email, username, password };
+                        const title = q('#auth-modal-title'); if (title) title.textContent = 'Verify OTP';
+                        const loginForm = q('#auth-login-form'); if (loginForm) loginForm.style.display = 'none';
+                        const regForm = q('#auth-register-form'); if (regForm) regForm.style.display = 'none';
+                        const otpView = q('#otp-verify-view'); if (otpView) otpView.style.display = '';
+                        const subtitle = q('#otp-subtitle'); if (subtitle) subtitle.textContent = `We sent a code to ${maskEmail(email)} • ${email}  Change email`;
+                        const otpMsg = q('#otp-msg'); if (otpMsg) { otpMsg.textContent = 'Enter the 6-digit code from your email.'; otpMsg.className = 'helper'; }
+                        const otpInput = q('#otp-input'); if (otpInput) { otpInput.value = ''; otpInput.focus(); }
                     } catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'helper error'; } }
                     finally { hideOverlay(); }
                 }
+            });
+
+            // OTP view actions
+            function maskEmail(email) {
+                const at = email.indexOf('@');
+                if (at <= 1) return email;
+                const name = email.slice(0, at);
+                const domain = email.slice(at);
+                const masked = name[0] + '*'.repeat(Math.max(1, name.length - 2)) + name.slice(-1);
+                return masked + domain;
+            }
+            const otpVerifyBtn = q('#otp-verify-btn'); if (otpVerifyBtn) otpVerifyBtn.addEventListener('click', async () => {
+                const otp = (q('#otp-input').value || '').trim();
+                const msg = q('#otp-msg'); if (msg) { msg.textContent = ''; msg.className = 'helper'; }
+                if (!__otpFlow.email || !__otpFlow.mode) { if (msg) { msg.textContent = 'Session expired. Please try again.'; msg.className = 'helper error'; } return; }
+                if (!otp || otp.length !== 6) { if (msg) { msg.textContent = 'Enter the 6-digit code.'; msg.className = 'helper error'; } return; }
+                showOverlay('Verifying OTP…', 'Please wait');
+                try {
+                    const otpRes = await otpApiPost({ action: 'verifyOtp', email: __otpFlow.email, otp });
+                    if (!otpRes.success) { if (msg) { msg.textContent = otpRes.error || 'Invalid or expired OTP'; msg.className = 'helper error'; } hideOverlay(); return; }
+                    if (__otpFlow.mode === 'login') {
+                        const res = await apiPost({ action: 'login', identifier: __otpFlow.identifier, password: __otpFlow.password });
+                        if (res.success) { auth.user = res.user; closeAuthModal(); render(); }
+                        else { if (msg) { msg.textContent = res.error || res.message || 'Login failed'; msg.className = 'helper error'; } }
+                    } else if (__otpFlow.mode === 'register') {
+                        const res = await apiPost({ action: 'register', email: __otpFlow.email, username: __otpFlow.username, password: __otpFlow.password });
+                        if (res.success) {
+                            try {
+                                const loginRes = await apiPost({ action: 'login', identifier: __otpFlow.email || __otpFlow.username, password: __otpFlow.password });
+                                if (loginRes.success) { auth.user = loginRes.user; closeAuthModal(); render(); }
+                                else { if (msg) { msg.textContent = (loginRes.error || 'Registered, but auto-login failed. Please login.'); msg.className = 'helper error'; } }
+                            } catch (e) { if (msg) { msg.textContent = 'Registered, but auto-login failed: ' + e.message; msg.className = 'helper error'; } }
+                        } else { if (msg) { msg.textContent = res.error || res.message || 'Registration failed'; msg.className = 'helper error'; } }
+                    }
+                } catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'helper error'; } }
+                finally { hideOverlay(); }
+            });
+
+            const otpResendBtn = q('#otp-resend-btn'); if (otpResendBtn) otpResendBtn.addEventListener('click', async () => {
+                const msg = q('#otp-msg'); if (msg) { msg.textContent = ''; msg.className = 'helper'; }
+                if (!__otpFlow.email || !__otpFlow.username) { if (msg) { msg.textContent = 'Session expired. Please try again.'; msg.className = 'helper error'; } return; }
+                showOverlay('Resending OTP…', 'Please wait');
+                try {
+                    const res = await otpApiPost({ action: 'sendOtp', email: __otpFlow.email, username: __otpFlow.username });
+                    if (res.success) { if (msg) { msg.textContent = 'OTP resent to your email'; msg.className = 'helper success'; } }
+                    else { if (msg) { msg.textContent = res.error || res.message || 'Failed to resend OTP'; msg.className = 'helper error'; } }
+                } catch (e) { if (msg) { msg.textContent = e.message; msg.className = 'helper error'; } }
+                finally { hideOverlay(); }
+            });
+
+            const otpChangeEmail = q('#otp-change-email'); if (otpChangeEmail) otpChangeEmail.addEventListener('click', (e) => {
+                e.preventDefault();
+                // Go back to appropriate form
+                const title = q('#auth-modal-title');
+                const otpView = q('#otp-verify-view'); if (otpView) otpView.style.display = 'none';
+                if (__otpFlow.mode === 'login') {
+                    if (title) title.textContent = 'Login';
+                    const loginForm = q('#auth-login-form'); if (loginForm) loginForm.style.display = '';
+                } else {
+                    if (title) title.textContent = 'Register';
+                    const regForm = q('#auth-register-form'); if (regForm) regForm.style.display = '';
+                }
+                __otpFlow = { mode: null, email: '', identifier: '', username: '', password: '' };
             });
             // Resend OTP functionality
             const modalBtnResendOtp = q('#modal-btn-resend-otp'); 
