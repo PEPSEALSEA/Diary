@@ -633,12 +633,13 @@
         <div class="helper" style="margin-bottom:12px;">Please login to write your diary. You can also browse public posts.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button id="home-login-btn">Open login</button>
-          <a class="ghost" href="#public" style="text-decoration:none"><button class="ghost">View public</button></a>
+          <a id="home-view-public" class="ghost" href="#public">View public</a>
         </div>
       </div>
     `);
                     mount.appendChild(n);
                     const btn = n.querySelector('#home-login-btn'); if (btn) btn.addEventListener('click', () => openAuthModal('login'));
+                    const viewPub = n.querySelector('#home-view-public'); if (viewPub) viewPub.addEventListener('click', (e) => { e.preventDefault(); location.hash = 'public'; });
                     return;
                 }
             }
@@ -1382,10 +1383,10 @@
         <div class="helper">${username} · ${toDisplayDate(date)}</div>
         <div class="spacer"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button id="pub-prev" class="ghost">Prev day</button>
-          <button id="pub-next" class="ghost">Next day</button>
-          <button id="pub-refresh" class="ghost">Refresh</button>
-          <button id="pub-back" class="ghost">Back to calendar</button>
+          <button id="pub-detail-prev" class="ghost">Prev day</button>
+          <button id="pub-detail-next" class="ghost">Next day</button>
+          <button id="pub-detail-refresh" class="ghost">Refresh</button>
+          <button id="pub-detail-back" class="ghost">Back to calendar</button>
         </div>
         <div class="spacer"></div>
         <div id="pub-msg" class="notice" style="display:none"></div>
@@ -1482,18 +1483,18 @@
                 loadPublic(false);
 
                 // Prev/Next day navigation
-                node.querySelector('#pub-prev').addEventListener('click', () => {
+                node.querySelector('#pub-detail-prev').addEventListener('click', () => {
                     const prev = addDaysIso(date, -1);
                     history.pushState({}, '', basePath() + '/' + encodeURIComponent(username) + '/' + toDisplayDate(prev));
                     render();
                 });
-                node.querySelector('#pub-next').addEventListener('click', () => {
+                node.querySelector('#pub-detail-next').addEventListener('click', () => {
                     const next = addDaysIso(date, 1);
                     history.pushState({}, '', basePath() + '/' + encodeURIComponent(username) + '/' + toDisplayDate(next));
                     render();
                 });
-                node.querySelector('#pub-refresh').addEventListener('click', () => { loadPublic(true); });
-                node.querySelector('#pub-back').addEventListener('click', () => { history.pushState({}, '', basePath() + '/' + encodeURIComponent(username)); render(); });
+                node.querySelector('#pub-detail-refresh').addEventListener('click', () => { loadPublic(true); });
+                node.querySelector('#pub-detail-back').addEventListener('click', () => { history.pushState({}, '', basePath() + '/' + encodeURIComponent(username)); render(); });
 
                 return node;
             }
@@ -1514,11 +1515,11 @@
           <button id="pub-apply" class="ghost">Search</button>
         </div>
         <div id="pub-pager" class="pager" style="display:none">
-          <button id="pub-prev" class="ghost" title="Previous page">◀</button>
+          <button id="pub-page-prev" class="ghost" title="Previous page">◀</button>
           <span class="helper">Page</span>
           <input id="pub-page-input" type="number" min="1" value="1" />
           <span id="pub-page-total" class="helper">/ 1</span>
-          <button id="pub-next" class="ghost" title="Next page">▶</button>
+          <button id="pub-page-next" class="ghost" title="Next page">▶</button>
         </div>
         <div id="pub-list" class="helper">Loading…</div>
       </div>
@@ -1529,8 +1530,8 @@
                 const filterSel = node.querySelector('#pub-filter');
                 const applyBtn = node.querySelector('#pub-apply');
                 const pager = node.querySelector('#pub-pager');
-                const prevBtn = node.querySelector('#pub-prev');
-                const nextBtn = node.querySelector('#pub-next');
+                const prevBtn = node.querySelector('#pub-page-prev');
+                const nextBtn = node.querySelector('#pub-page-next');
                 const pageInput = node.querySelector('#pub-page-input');
                 const pageTotal = node.querySelector('#pub-page-total');
                 const pageSize = 10;
