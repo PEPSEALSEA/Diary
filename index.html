@@ -812,8 +812,14 @@
               <button id="btn-refresh" class="ghost">Refresh</button>
             </div>
             <div class="spacer"></div>
-            <label>Title <span id="title-privacy-icon" class="helper" style="margin-left:6px"></span></label>
-            <input id="diary-title" placeholder="Optional title" />
+            <label>Entry <span id="title-privacy-icon" class="helper" style="margin-left:6px"></span></label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <select id="diary-entry-select" style="min-width:220px"></select>
+              <button id="btn-new-entry" class="ghost">New entry</button>
+            </div>
+            <div class="spacer"></div>
+            <label>Title</label>
+            <input id="diary-title" placeholder="Title for this entry" />
             <div class="spacer"></div>
             <label>Content</label>
             <textarea id="diary-content" placeholder="Write your day..."></textarea>
@@ -865,6 +871,8 @@
 
                 const dateInput = node.querySelector('#diary-date');
                 const titleInput = node.querySelector('#diary-title');
+                const entrySelect = node.querySelector('#diary-entry-select');
+                const btnNewEntry = node.querySelector('#btn-new-entry');
                 const contentInput = node.querySelector('#diary-content');
                 const privacySelect = node.querySelector('#diary-private');
                 const msg = node.querySelector('#dash-msg');
@@ -914,6 +922,7 @@
                 // Edit mode toggle (read-only by default)
                 let editMode = false;
                 let currentHasEntry = false;
+                let currentEntryId = null;
                 let lastSavedSnapshot = { title: '', content: '', privacy: 'public', date: dateInput.value };
                 let autosaveTimer = null;
                 let autosaveInFlight = false;
@@ -925,9 +934,9 @@
                     contentInput.disabled = disabled;
                     privacySelect.disabled = disabled;
                     dateInput.disabled = false; // allow switching date even in view mode
-                    q('#btn-save', node).style.display = editMode ? '' : 'none';
-                    q('#btn-update', node).style.display = editMode ? '' : 'none';
-                    q('#btn-delete', node).style.display = editMode ? '' : 'none';
+                    q('#btn-save', node).style.display = editMode ? (currentEntryId ? 'none' : '') : 'none';
+                    q('#btn-update', node).style.display = editMode ? (currentEntryId ? '' : 'none') : 'none';
+                    q('#btn-delete', node).style.display = editMode ? (currentEntryId ? '' : 'none') : 'none';
                     btnEdit.textContent = editMode ? 'Done' : 'Edit';
                     
                     // Show/hide autosave indicator
@@ -989,7 +998,7 @@
                     }
                     autosaveInFlight = true;
                     try {
-                        if (currentHasEntry) {
+                        if (currentEntryId) {
                             await update(!!showBusy);
                             if (force) setMsg('Auto-saved at ' + new Date().toLocaleTimeString(), true);
                         } else {
@@ -1184,6 +1193,8 @@
                         privacySelect.value = 'public';
                         updateTitleIconFromPrivacy();
                         currentHasEntry = false;
+                        currentEntryId = null;
+                        if (entrySelect) entrySelect.innerHTML = '';
                         if (!force && clientCache.userEmptyDates && clientCache.userEmptyDates.has(d)) {
                             titleInput.value = '';
                             contentInput.value = '';
@@ -1194,36 +1205,30 @@
                             setMsg('No entry for ' + toDisplayDate(d), false, true);
                             return;
                         }
-                        // Use private/self endpoint first
+                        // Load all entries for this date
                         let ok = false;
-                        currentHasEntry = false;
-                        // If cache has the entry, use it
-                        if (clientCache.userLoadedAll && clientCache.userEntriesByDate[d] && clientCache.userEntriesByDate[d].length > 0) {
-                            const ownEntry = clientCache.userEntriesByDate[d][0];
-                            titleInput.value = ownEntry.title || '';
-                            contentInput.value = ownEntry.content || '';
-                            setPrivacyValueSafe(ownEntry.privacy, ownEntry.isPrivate);
-                            ok = true; currentHasEntry = true;
-                        } else {
-                            const own = await apiGet({ action: 'getUserDiaryEntry', userId: user.id, date: d });
-                            if (own.success && own.entry) {
-                                titleInput.value = own.entry.title || '';
-                                contentInput.value = own.entry.content || '';
-                                setPrivacyValueSafe(own.entry.privacy, own.entry.isPrivate);
-                                ok = true; currentHasEntry = true;
-                            } else {
-                                // Fallback to public view if this date is public and username/date requested directly
-                                try {
-                                    const pub = await apiGet({ action: 'getDiaryEntry', username: user.username, date: d, viewerUserId: (auth.user && auth.user.id) ? auth.user.id : '' });
-                                    if (pub.success && pub.entry) {
-                                        titleInput.value = pub.entry.title || '';
-                                        contentInput.value = pub.entry.content || '';
-                                        setPrivacyValueSafe(pub.entry.privacy, pub.entry.isPrivate);
-                                        currentHasEntry = true;
-                                        ok = true;
-                                    }
-                                } catch (e) { }
+                        const entriesRes = await apiGet({ action: 'listUserEntriesByDate', userId: user.id, date: d });
+                        const entries = (entriesRes && entriesRes.success && Array.isArray(entriesRes.entries)) ? entriesRes.entries : [];
+                        // Populate selector
+                        if (entrySelect) {
+                            const makeOpt = (text, value) => { const o = document.createElement('option'); o.textContent = text; o.value = value || ''; return o; };
+                            entrySelect.appendChild(makeOpt('(New entry)', ''));
+                            for (const e of entries) {
+                                const pval = normalizePrivacyValue(e.privacy, e.isPrivate);
+                                const icon = privacyIcon(pval);
+                                const label = `${icon ? (icon + ' ') : ''}${e.title || 'Untitled'}`;
+                                const o = makeOpt(label, e.entryId);
+                                entrySelect.appendChild(o);
                             }
+                            entrySelect.value = entries.length ? entries[0].entryId : '';
+                        }
+                        if (entries.length) {
+                            const e0 = entries[0];
+                            currentEntryId = e0.entryId;
+                            titleInput.value = e0.title || '';
+                            contentInput.value = e0.content || '';
+                            setPrivacyValueSafe(e0.privacy, e0.isPrivate);
+                            ok = true; currentHasEntry = true;
                         }
                         if (seq !== currentLoadSeq) return; // ignore stale response
                         lastSavedSnapshot = { title: titleInput.value, content: contentInput.value, privacy: privacySelect.value, date: d };
@@ -1239,6 +1244,7 @@
                             setMsg('No entry for ' + toDisplayDate(d), false, true);
                         }
                         updateTitleIconFromPrivacy();
+                        applyEditMode();
                     } catch (e) { setMsg(e.message, false); }
                 }
 
@@ -1258,13 +1264,21 @@
                         if (res.success) {
                             setMsg('Saved.', true);
                             // update client cache
-                            const entry = { date: payload.date, title: payload.title, content: payload.content, privacy: payload.privacy };
+                            const entry = { entryId: res.entryId, date: payload.date, title: payload.title, content: payload.content, privacy: payload.privacy };
                             if (!Array.isArray(clientCache.userEntries)) clientCache.userEntries = [];
                             clientCache.userEntries.unshift(entry);
                             clientCache.userLoadedAll = true;
-                            clientCache.userEntriesByDate[payload.date] = [entry];
+                            const list = clientCache.userEntriesByDate[payload.date] || (clientCache.userEntriesByDate[payload.date] = []);
+                            list.unshift(entry);
                             if (clientCache.userEmptyDates) clientCache.userEmptyDates.delete(payload.date);
                             currentHasEntry = true;
+                            currentEntryId = res.entryId;
+                            if (entrySelect) {
+                                const o = document.createElement('option');
+                                o.value = res.entryId; o.textContent = (titleInput.value || 'Untitled');
+                                entrySelect.insertBefore(o, entrySelect.children[1] || null);
+                                entrySelect.value = res.entryId;
+                            }
                             updateTitleIconFromPrivacy();
                             // re-render dependents
                             renderCalendar();
@@ -1277,7 +1291,13 @@
 
                 async function update(showBusy = true) {
                     clearMsg();
-                    const payload = {
+                    const payload = currentEntryId ? {
+                        action: 'updateDiaryEntryById',
+                        entryId: currentEntryId,
+                        title: titleInput.value,
+                        content: contentInput.value,
+                        privacy: privacySelect.value
+                    } : {
                         action: 'updateDiaryEntry',
                         userId: user.id,
                         date: dateInput.value || today(),
@@ -1292,9 +1312,15 @@
                             setMsg('Updated.', true);
                             // update client cache
                             if (Array.isArray(clientCache.userEntries)) {
-                                for (const e of clientCache.userEntries) { if (e.date === payload.date) { e.title = payload.title; e.content = payload.content; e.privacy = payload.privacy; break; } }
+                                for (const e of clientCache.userEntries) { if ((currentEntryId && e.entryId === currentEntryId) || (!currentEntryId && e.date === (dateInput.value || today()))) { e.title = titleInput.value; e.content = contentInput.value; e.privacy = privacySelect.value; break; } }
                             }
-                            clientCache.userEntriesByDate[payload.date] = [{ date: payload.date, title: payload.title, content: payload.content, privacy: payload.privacy }];
+                            const d = dateInput.value || today();
+                            const list = clientCache.userEntriesByDate[d] || (clientCache.userEntriesByDate[d] = []);
+                            if (currentEntryId) {
+                                for (const e of list) { if (e.entryId === currentEntryId) { e.title = titleInput.value; e.content = contentInput.value; e.privacy = privacySelect.value; break; } }
+                            } else {
+                                clientCache.userEntriesByDate[d] = [{ date: d, title: titleInput.value, content: contentInput.value, privacy: privacySelect.value }];
+                            }
                             if (clientCache.userEmptyDates) clientCache.userEmptyDates.delete(payload.date);
                             updateTitleIconFromPrivacy();
                             renderCalendar();
@@ -1310,17 +1336,23 @@
                     clearMsg();
                     showOverlay('Deleting…', 'Please wait');
                     try {
-                        const res = await apiPost({ action: 'deleteDiaryEntry', userId: user.id, date: dateInput.value || today() });
+                        const res = await apiPost(currentEntryId ? { action: 'deleteDiaryEntryById', entryId: currentEntryId } : { action: 'deleteDiaryEntry', userId: user.id, date: dateInput.value || today() });
                         if (res.success) {
                             titleInput.value = ''; contentInput.value = '';
                             privacySelect.value = 'public';
                             updateTitleIconFromPrivacy();
                             setMsg('Deleted.', true);
                             const d = dateInput.value || today();
-                            if (Array.isArray(clientCache.userEntries)) { clientCache.userEntries = clientCache.userEntries.filter(e => e.date !== d); }
-                            delete clientCache.userEntriesByDate[d];
+                            if (Array.isArray(clientCache.userEntries)) { clientCache.userEntries = clientCache.userEntries.filter(e => e.entryId !== currentEntryId); }
+                            if (clientCache.userEntriesByDate[d]) { clientCache.userEntriesByDate[d] = clientCache.userEntriesByDate[d].filter(e => e.entryId !== currentEntryId); }
                             if (clientCache.userEmptyDates) clientCache.userEmptyDates.add(d);
                             currentHasEntry = false;
+                            currentEntryId = null;
+                            if (entrySelect) {
+                                const opt = Array.from(entrySelect.options).find(o => o.value === (res.entryId || '') || o.value === (currentEntryId || ''));
+                                if (opt) opt.remove();
+                                entrySelect.value = '';
+                            }
                             renderCalendar();
                             loadRecent();
                         }
@@ -1332,6 +1364,21 @@
                 node.querySelector('#btn-save').addEventListener('click', save);
                 node.querySelector('#btn-update').addEventListener('click', update);
                 node.querySelector('#btn-delete').addEventListener('click', remove);
+                if (entrySelect) entrySelect.addEventListener('change', () => {
+                    const id = entrySelect.value;
+                    if (!id) { currentEntryId = null; titleInput.value = ''; contentInput.value = ''; privacySelect.value = 'public'; updateTitleIconFromPrivacy(); applyEditMode(); return; }
+                    const d = dateInput.value || today();
+                    const list = clientCache.userEntriesByDate[d] || [];
+                    const e = list.find(x => x.entryId === id) || (clientCache.userEntries || []).find(x => x.entryId === id);
+                    if (e) {
+                        currentEntryId = e.entryId;
+                        titleInput.value = e.title || '';
+                        contentInput.value = e.content || '';
+                        setPrivacyValueSafe(e.privacy, e.isPrivate);
+                        applyEditMode();
+                    }
+                });
+                if (btnNewEntry) btnNewEntry.addEventListener('click', () => { entrySelect.value = ''; entrySelect.dispatchEvent(new Event('change')); });
                 dateInput.addEventListener('change', async () => { setPermalink(); await load(false); updateTitleIconFromPrivacy(); });
                 node.querySelector('#btn-prev-day').addEventListener('click', async () => { dateInput.value = addDaysIso(dateInput.value || today(), -1); setPermalink(); await load(false); updateTitleIconFromPrivacy(); });
                 node.querySelector('#btn-next-day').addEventListener('click', async () => { dateInput.value = addDaysIso(dateInput.value || today(), 1); setPermalink(); await load(false); updateTitleIconFromPrivacy(); });
