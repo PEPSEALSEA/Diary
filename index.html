@@ -462,6 +462,107 @@
             };
             function viewerEmail() { return (auth.user && auth.user.email) ? auth.user.email : ''; }
 
+            // Function to update cache after entry operations
+            function updateCacheAfterEntryOperation(operation, entryData) {
+                if (!clientCache.userLoadedAll || !clientCache.userEntries) return;
+                
+                switch (operation) {
+                    case 'save':
+                        // Add new entry to cache
+                        clientCache.userEntries.unshift(entryData);
+                        const list = clientCache.userEntriesByDate[entryData.date] || (clientCache.userEntriesByDate[entryData.date] = []);
+                        list.unshift(entryData);
+                        if (clientCache.userEmptyDates) clientCache.userEmptyDates.delete(entryData.date);
+                        break;
+                        
+                    case 'update':
+                        // Update existing entry in cache
+                        for (let i = 0; i < clientCache.userEntries.length; i++) {
+                            if (clientCache.userEntries[i].entryId === entryData.entryId) {
+                                Object.assign(clientCache.userEntries[i], entryData);
+                                break;
+                            }
+                        }
+                        if (clientCache.userEntriesByDate[entryData.date]) {
+                            for (let i = 0; i < clientCache.userEntriesByDate[entryData.date].length; i++) {
+                                if (clientCache.userEntriesByDate[entryData.date][i].entryId === entryData.entryId) {
+                                    Object.assign(clientCache.userEntriesByDate[entryData.date][i], entryData);
+                                    break;
+                                }
+                            }
+                        }
+                        break;
+                        
+                    case 'delete':
+                        // Remove entry from cache
+                        clientCache.userEntries = clientCache.userEntries.filter(e => e.entryId !== entryData.entryId);
+                        if (clientCache.userEntriesByDate[entryData.date]) {
+                            clientCache.userEntriesByDate[entryData.date] = clientCache.userEntriesByDate[entryData.date].filter(e => e.entryId !== entryData.entryId);
+                            if (clientCache.userEntriesByDate[entryData.date].length === 0) {
+                                delete clientCache.userEntriesByDate[entryData.date];
+                                if (clientCache.userEmptyDates) clientCache.userEmptyDates.add(entryData.date);
+                            }
+                        }
+                        break;
+                }
+            }
+
+            // Centralized function to ensure user data is loaded once and cached
+            async function ensureUserDataLoaded(force = false) {
+                const user = auth.user;
+                if (!user) return false;
+                
+                // Check if we already have fresh data (less than 5 minutes old)
+                const now = Date.now();
+                const isDataFresh = clientCache.userLoadedAll && 
+                                  clientCache.userEntries && 
+                                  (now - clientCache.lastFetchTime) < 300000; // 5 minutes
+                
+                if (isDataFresh && !force) {
+                    return true; // Data is already loaded and fresh
+                }
+                
+                // Prevent multiple simultaneous fetches
+                if (clientCache.fetchInProgress) {
+                    // Wait for the current fetch to complete
+                    while (clientCache.fetchInProgress) {
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                    return clientCache.userLoadedAll;
+                }
+                
+                try {
+                    clientCache.fetchInProgress = true;
+                    console.log('Fetching all user entries...');
+                    
+                    const res = await apiGet({ action: 'getUserDiaryEntries', userId: user.id });
+                    if (res.success && Array.isArray(res.entries)) {
+                        clientCache.userEntries = res.entries;
+                        clientCache.userEntriesByDate = {};
+                        clientCache.userEmptyDates.clear();
+                        
+                        // Organize entries by date for instant lookup
+                        for (const e of res.entries) {
+                            const list = clientCache.userEntriesByDate[e.date] || (clientCache.userEntriesByDate[e.date] = []);
+                            list.push(e);
+                        }
+                        
+                        clientCache.userLoadedAll = true;
+                        clientCache.lastFetchTime = now;
+                        console.log(`Loaded ${res.entries.length} entries into cache`);
+                        return true;
+                    } else {
+                        console.error('Failed to load user entries:', res.error);
+                        return false;
+                    }
+                } catch (error) {
+                    console.error('Error loading user data:', error);
+                    return false;
+                } finally {
+                    clientCache.fetchInProgress = false;
+                }
+            }
+
             function q(sel, root = document) { return root.querySelector(sel); }
             function el(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstChild; }
             const clientCache = {
@@ -470,6 +571,8 @@
                 userLoadedAll: false,
                 userEmptyDates: new Set(), // dates confirmed to have no private entry
                 publicByUser: new Map(), // username -> {entries: [], byDate: {}, emptyDates: Set}
+                lastFetchTime: 0, // Track when data was last fetched
+                fetchInProgress: false, // Prevent multiple simultaneous fetches
             };
             function fmtDate(d) {
                 const x = new Date(d);
@@ -1087,8 +1190,11 @@
                     const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
                     for (let i = 0; i < startPad; i++) { const pad = document.createElement('div'); grid.appendChild(pad); }
                     
+                    // Ensure user data is loaded first
+                    await ensureUserDataLoaded();
+                    
                     let entriesByDate = {};
-                    // Always use preloaded data if available - instant rendering
+                    // Use cached data for instant rendering
                     if (clientCache.userLoadedAll && clientCache.userEntries) {
                         for (const e of clientCache.userEntries) {
                             if (!e.date.startsWith(monthStr)) continue;
@@ -1101,17 +1207,6 @@
                             if (!date.startsWith(monthStr)) continue;
                             entriesByDate[date] = clientCache.userEntriesByDate[date];
                         }
-                    } else {
-                        // Fallback: fetch only if no preloaded data available
-                        try {
-                            const res = await apiGet({ action: 'getUserDiaryEntries', userId: user.id, month: monthStr });
-                            if (res.success && Array.isArray(res.entries)) {
-                                for (const e of res.entries) {
-                                    const list = entriesByDate[e.date] || (entriesByDate[e.date] = []);
-                                    list.push(e);
-                                }
-                            }
-                        } catch (err) { }
                     }
                     for (let day = 1; day <= daysInMonth; day++) {
                         const dstr = String(calYear) + '-' + String(calMonth + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
@@ -1217,7 +1312,10 @@
 
                 async function loadRecent() {
                     try {
-                        // Always use preloaded data if available - instant response
+                        // Ensure user data is loaded first
+                        await ensureUserDataLoaded();
+                        
+                        // Use cached data for instant response
                         if (clientCache.userLoadedAll && Array.isArray(clientCache.userEntries)) {
                             recentAll = clientCache.userEntries.slice();
                             recentPage = 1;
@@ -1225,13 +1323,12 @@
                             return;
                         }
 
-                        // Fallback: only fetch if no preloaded data available
-                        const res = await apiGet({ action: 'getUserDiaryEntries', userId: user.id });
-                        if (!res.success) { recentWrap.textContent = res.error || 'Failed to load'; return; }
-                        recentAll = Array.isArray(res.entries) ? res.entries.slice() : [];
-                        recentPage = 1;
-                        renderRecent();
-                    } catch (e) { const wrap = node.querySelector('#recent-list'); wrap.textContent = e.message; }
+                        // This should rarely happen now since ensureUserDataLoaded handles the fetch
+                        recentWrap.textContent = 'No entries found';
+                    } catch (e) { 
+                        const wrap = node.querySelector('#recent-list'); 
+                        wrap.textContent = e.message; 
+                    }
                 }
 
                 let currentLoadSeq = 0;
@@ -1282,7 +1379,10 @@
                         currentEntryId = null;
                         if (entrySelect) entrySelect.innerHTML = '';
                         
-                        // Use preloaded data if available, otherwise fall back to API
+                        // Ensure user data is loaded first
+                        await ensureUserDataLoaded();
+                        
+                        // Use cached data for instant response
                         let entries = [];
                         const hasPreloadedData = clientCache.userLoadedAll && clientCache.userEntriesByDate && clientCache.userEntriesByDate[d];
                         const isKnownEmpty = !force && clientCache.userEmptyDates && clientCache.userEmptyDates.has(d);
@@ -1301,14 +1401,8 @@
                             setMsg('No entry for ' + toDisplayDate(d), false, true);
                             return;
                         } else {
-                            // Only show loading overlay if we don't have preloaded data
-                            if (showOverlay) showOverlay('Loading…', 'Please wait');
-                            
-                            // Fallback to API call if data not preloaded
-                            const entriesRes = await apiGet({ action: 'listUserEntriesByDate', userId: user.id, date: d });
-                            entries = (entriesRes && entriesRes.success && Array.isArray(entriesRes.entries)) ? entriesRes.entries : [];
-                            
-                            if (showOverlay) hideOverlay();
+                            // This should rarely happen now since ensureUserDataLoaded handles the fetch
+                            entries = [];
                         }
                         
                         // Populate selector
@@ -1377,14 +1471,9 @@
                         const res = await apiPost(payload);
                         if (res.success) {
                             setMsg('Saved.', true);
-                            // update client cache
+                            // update client cache using centralized function
                             const entry = { entryId: res.entryId, date: payload.date, title: payload.title, content: payload.content, privacy: payload.privacy };
-                            if (!Array.isArray(clientCache.userEntries)) clientCache.userEntries = [];
-                            clientCache.userEntries.unshift(entry);
-                            clientCache.userLoadedAll = true;
-                            const list = clientCache.userEntriesByDate[payload.date] || (clientCache.userEntriesByDate[payload.date] = []);
-                            list.unshift(entry);
-                            if (clientCache.userEmptyDates) clientCache.userEmptyDates.delete(payload.date);
+                            updateCacheAfterEntryOperation('save', entry);
                             currentHasEntry = true;
                             currentEntryId = res.entryId;
                             if (entrySelect) {
@@ -1432,18 +1521,15 @@
                         const res = await apiPost(payload);
                         if (res.success) {
                             setMsg('Updated.', true);
-                            // update client cache
-                            if (Array.isArray(clientCache.userEntries)) {
-                                for (const e of clientCache.userEntries) { if ((currentEntryId && e.entryId === currentEntryId) || (!currentEntryId && e.date === (dateInput.value || today()))) { e.title = titleInput.value; e.content = contentInput.value; e.privacy = privacySelect.value; break; } }
-                            }
-                            const d = dateInput.value || today();
-                            const list = clientCache.userEntriesByDate[d] || (clientCache.userEntriesByDate[d] = []);
-                            if (currentEntryId) {
-                                for (const e of list) { if (e.entryId === currentEntryId) { e.title = titleInput.value; e.content = contentInput.value; e.privacy = privacySelect.value; break; } }
-                            } else {
-                                clientCache.userEntriesByDate[d] = [{ date: d, title: titleInput.value, content: contentInput.value, privacy: privacySelect.value }];
-                            }
-                            if (clientCache.userEmptyDates) clientCache.userEmptyDates.delete(payload.date);
+                            // update client cache using centralized function
+                            const entry = { 
+                                entryId: currentEntryId, 
+                                date: payload.date, 
+                                title: titleInput.value, 
+                                content: contentInput.value, 
+                                privacy: privacySelect.value 
+                            };
+                            updateCacheAfterEntryOperation('update', entry);
                             updateTitleIconFromPrivacy();
                             renderCalendar();
                             loadRecent();
@@ -1464,10 +1550,9 @@
                             privacySelect.value = 'public';
                             updateTitleIconFromPrivacy();
                             setMsg('Deleted.', true);
-                            const d = dateInput.value || today();
-                            if (Array.isArray(clientCache.userEntries)) { clientCache.userEntries = clientCache.userEntries.filter(e => e.entryId !== currentEntryId); }
-                            if (clientCache.userEntriesByDate[d]) { clientCache.userEntriesByDate[d] = clientCache.userEntriesByDate[d].filter(e => e.entryId !== currentEntryId); }
-                            if (clientCache.userEmptyDates) clientCache.userEmptyDates.add(d);
+                            // update client cache using centralized function
+                            const entry = { entryId: currentEntryId, date: dateInput.value || today() };
+                            updateCacheAfterEntryOperation('delete', entry);
                             currentHasEntry = false;
                             currentEntryId = null;
                             if (entrySelect) {
@@ -1554,27 +1639,10 @@
                     try {
                         showOverlay('Loading all data…', 'Please wait');
                         
-                        // Load all user entries at once for instant access
-                        const res = await apiGet({ action: 'getUserDiaryEntries', userId: user.id });
-                        if (res.success && Array.isArray(res.entries)) {
-                            clientCache.userEntries = res.entries;
-                            clientCache.userEntriesByDate = {};
-                            
-                            // Organize entries by date for instant lookup
-                            for (const e of res.entries) {
-                                const list = clientCache.userEntriesByDate[e.date] || (clientCache.userEntriesByDate[e.date] = []);
-                                list.push(e);
-                            }
-                            
-                            // Mark all dates with entries as non-empty
-                            for (const date in clientCache.userEntriesByDate) {
-                                if (clientCache.userEmptyDates) {
-                                    clientCache.userEmptyDates.delete(date);
-                                }
-                            }
-                            
-                            clientCache.userLoadedAll = true;
-                            
+                        // Use centralized data loading function
+                        const success = await ensureUserDataLoaded(true); // Force refresh
+                        
+                        if (success) {
                             // Now load today's entry using preloaded data (instant)
                             await load(false);
                             applyEditMode();
