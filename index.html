@@ -1722,7 +1722,7 @@
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button id="pub-detail-prev" class="ghost">Prev day</button>
           <button id="pub-detail-next" class="ghost">Next day</button>
-          <button id="pub-detail-refresh" class="ghost">Refresh</button>
+          <button id="pub-detail-refresh" class="ghost">Refresh data</button>
           <button id="pub-detail-back" class="ghost">Back to calendar</button>
         </div>
         <div class="spacer"></div>
@@ -1812,7 +1812,11 @@
                     history.pushState({}, '', basePath() + '/' + encodeURIComponent(username) + '/' + toDisplayDate(next));
                     render();
                 });
-                node.querySelector('#pub-detail-refresh').addEventListener('click', () => { loadPublic(true); });
+                node.querySelector('#pub-detail-refresh').addEventListener('click', async () => { 
+                    // Clear the cache for this user to force fresh data
+                    clientCache.publicByUser.delete(username);
+                    await loadPublic(true); 
+                });
                 node.querySelector('#pub-detail-back').addEventListener('click', () => { history.pushState({}, '', basePath() + '/' + encodeURIComponent(username)); render(); });
 
                 return node;
@@ -1979,6 +1983,7 @@
           <button id="cal-prev" class="ghost">Prev</button>
           <div id="cal-label" class="badge"></div>
           <button id="cal-next" class="ghost">Next</button>
+          <button id="cal-refresh" class="ghost">Refresh data</button>
         </div>
         <div id="calendar"></div>
         <div class="spacer"></div>
@@ -1997,6 +2002,15 @@
 
                 calPrev.addEventListener('click', () => { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); });
                 calNext.addEventListener('click', () => { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } renderCalendar(); });
+                const calRefresh = node.querySelector('#cal-refresh');
+                if (calRefresh) {
+                    calRefresh.addEventListener('click', async () => {
+                        // Clear the cache for this user to force fresh data
+                        clientCache.publicByUser.delete(username);
+                        publicEntries = null; // Reset local cache
+                        await renderCalendar();
+                    });
+                }
 
                 async function ensureEntries() {
                     // If background all-data cache exists, use it
