@@ -1041,16 +1041,23 @@
                     const startPad = first.getDay();
                     const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
                     for (let i = 0; i < startPad; i++) { const pad = document.createElement('div'); grid.appendChild(pad); }
+                    
                     let entriesByDate = {};
-                    // Prefer client cache if available
+                    // Always use preloaded data if available - instant rendering
                     if (clientCache.userLoadedAll && clientCache.userEntries) {
                         for (const e of clientCache.userEntries) {
                             if (!e.date.startsWith(monthStr)) continue;
                             const list = entriesByDate[e.date] || (entriesByDate[e.date] = []);
                             list.push(e);
                         }
+                    } else if (clientCache.userEntriesByDate) {
+                        // Use preloaded by-date data for instant rendering
+                        for (const date in clientCache.userEntriesByDate) {
+                            if (!date.startsWith(monthStr)) continue;
+                            entriesByDate[date] = clientCache.userEntriesByDate[date];
+                        }
                     } else {
-                        // fallback quick fetch for current month
+                        // Fallback: fetch only if no preloaded data available
                         try {
                             const res = await apiGet({ action: 'getUserDiaryEntries', userId: user.id, month: monthStr });
                             if (res.success && Array.isArray(res.entries)) {
@@ -1165,7 +1172,7 @@
 
                 async function loadRecent() {
                     try {
-                        // Prefer cache if loaded
+                        // Always use preloaded data if available - instant response
                         if (clientCache.userLoadedAll && Array.isArray(clientCache.userEntries)) {
                             recentAll = clientCache.userEntries.slice();
                             recentPage = 1;
@@ -1173,6 +1180,7 @@
                             return;
                         }
 
+                        // Fallback: only fetch if no preloaded data available
                         const res = await apiGet({ action: 'getUserDiaryEntries', userId: user.id });
                         if (!res.success) { recentWrap.textContent = res.error || 'Failed to load'; return; }
                         recentAll = Array.isArray(res.entries) ? res.entries.slice() : [];
@@ -1187,6 +1195,7 @@
                     try {
                         const d = dateInput.value || today();
                         const seq = ++currentLoadSeq;
+                        
                         // Clear fields immediately on date switch to avoid showing stale content
                         titleInput.value = '';
                         contentInput.value = '';
@@ -1195,7 +1204,14 @@
                         currentHasEntry = false;
                         currentEntryId = null;
                         if (entrySelect) entrySelect.innerHTML = '';
-                        if (!force && clientCache.userEmptyDates && clientCache.userEmptyDates.has(d)) {
+                        
+                        // Use preloaded data if available, otherwise fall back to API
+                        let entries = [];
+                        if (clientCache.userLoadedAll && clientCache.userEntriesByDate && clientCache.userEntriesByDate[d]) {
+                            // Use preloaded data - instant response
+                            entries = clientCache.userEntriesByDate[d];
+                        } else if (!force && clientCache.userEmptyDates && clientCache.userEmptyDates.has(d)) {
+                            // Known empty date from cache
                             titleInput.value = '';
                             contentInput.value = '';
                             privacySelect.value = 'public';
@@ -1204,11 +1220,12 @@
                             lastSavedSnapshot = { title: '', content: '', privacy: 'public', date: d };
                             setMsg('No entry for ' + toDisplayDate(d), false, true);
                             return;
+                        } else {
+                            // Fallback to API call if data not preloaded
+                            const entriesRes = await apiGet({ action: 'listUserEntriesByDate', userId: user.id, date: d });
+                            entries = (entriesRes && entriesRes.success && Array.isArray(entriesRes.entries)) ? entriesRes.entries : [];
                         }
-                        // Load all entries for this date
-                        let ok = false;
-                        const entriesRes = await apiGet({ action: 'listUserEntriesByDate', userId: user.id, date: d });
-                        const entries = (entriesRes && entriesRes.success && Array.isArray(entriesRes.entries)) ? entriesRes.entries : [];
+                        
                         // Populate selector
                         if (entrySelect) {
                             const makeOpt = (text, value) => { const o = document.createElement('option'); o.textContent = text; o.value = value || ''; return o; };
@@ -1222,6 +1239,8 @@
                             }
                             entrySelect.value = entries.length ? entries[0].entryId : '';
                         }
+                        
+                        let ok = false;
                         if (entries.length) {
                             const e0 = entries[0];
                             currentEntryId = e0.entryId;
@@ -1230,13 +1249,14 @@
                             setPrivacyValueSafe(e0.privacy, e0.isPrivate);
                             ok = true; currentHasEntry = true;
                         }
+                        
                         if (seq !== currentLoadSeq) return; // ignore stale response
                         lastSavedSnapshot = { title: titleInput.value, content: contentInput.value, privacy: privacySelect.value, date: d };
+                        
                         if (ok) {
                             setMsg('Loaded entry for ' + toDisplayDate(d), true, true);
                             if (clientCache.userEmptyDates) clientCache.userEmptyDates.delete(d);
-                        }
-                        else {
+                        } else {
                             titleInput.value = '';
                             contentInput.value = '';
                             privacySelect.value = 'public';
@@ -1395,11 +1415,9 @@
                     }
                 });
 
-                // Initial quick load of today's entry in view mode
-                setMsg('Loading…', true, true);
-                load(false).finally(() => { applyEditMode(); hideOverlay(); });
-
-                // Prefetch all user entries once in background
+                // Prefetch all user entries first, then load today's entry
+                setMsg('Loading all entries…', true, true);
+                
                 (async function prefetchAll() {
                     try {
                         const res = await apiGet({ action: 'getUserDiaryEntries', userId: user.id });
@@ -1411,15 +1429,30 @@
                                 list.push(e);
                             }
                             clientCache.userLoadedAll = true;
-                            // refresh calendar and recent to avoid waiting later
+                            
+                            // Now load today's entry using preloaded data (instant)
+                            await load(false);
+                            applyEditMode();
+                            
+                            // Refresh calendar and recent using preloaded data (instant)
                             renderCalendar();
                             loadRecent();
-                            clearMsg();
-                        } else { clearMsg(); }
-                    } catch (e) { clearMsg(); }
+                            
+                            setMsg('Ready', true, true);
+                            setTimeout(() => clearMsg(), 1000);
+                        } else { 
+                            // Fallback if prefetch fails
+                            await load(false);
+                            applyEditMode();
+                            clearMsg(); 
+                        }
+                    } catch (e) { 
+                        // Fallback if prefetch fails
+                        await load(false);
+                        applyEditMode();
+                        clearMsg(); 
+                    }
                 })();
-
-                loadRecent();
                 return node;
             }
 
