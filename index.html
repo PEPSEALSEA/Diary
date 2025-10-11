@@ -1675,56 +1675,51 @@
             async function ensurePublicUserDataLoaded(username, force = false) {
                 const cached = clientCache.publicByUser.get(username);
                 
-                // Check if we already have comprehensive data (either with entries or confirmed empty)
-                const hasComprehensiveData = cached && 
-                                           (Array.isArray(cached.entries) && cached.entries.length > 0) &&
-                                           cached.byDate && 
-                                           Object.keys(cached.byDate).length > 0;
+                // Check if we already have comprehensive data loaded (marked as fully loaded)
+                const hasComprehensiveData = cached && cached.fullyLoaded && !force;
                 
-                // Also check if we have a cache entry (even if empty) and we're not forcing refresh
-                const hasCacheEntry = cached && !force;
-                
-                if ((hasComprehensiveData || hasCacheEntry) && !force) {
-                    return true; // Data is already loaded or we have a cache entry
+                if (hasComprehensiveData) {
+                    return true; // Data is already fully loaded
                 }
                 
                 try {
-                    console.log(`Preloading all public entries for ${username}...`);
+                    console.log(`Loading ALL public entries for ${username} (one-time load)...`);
                     
-                    // First, try to get all entries for this user
-                    const all = await apiGet({ action: 'getPublicDiaryEntries', username, limit: '500', viewerUserId: (auth.user && auth.user.id) ? auth.user.id : '' });
+                    // Get ALL entries for this user (no limit, all years, all days)
+                    const all = await apiGet({ action: 'getPublicDiaryEntries', username, limit: '9999', viewerUserId: (auth.user && auth.user.id) ? auth.user.id : '' });
+                    
+                    // Create comprehensive cache structure
+                    const store = { 
+                        entries: [], 
+                        byDate: {}, 
+                        emptyDates: new Set(),
+                        emptyDatesTimeouts: new Map(),
+                        fullyLoaded: true, // Mark as fully loaded
+                        loadedAt: Date.now() // Track when it was loaded
+                    };
+                    
                     if (all.success && Array.isArray(all.entries)) {
-                        // Preserve existing emptyDates and timeouts from current cache
-                        const existing = clientCache.publicByUser.get(username) || { entries: [], byDate: {}, emptyDates: new Set(), emptyDatesTimeouts: new Map() };
-                        const store = { 
-                            entries: all.entries, 
-                            byDate: {}, 
-                            emptyDates: existing.emptyDates || new Set(),
-                            emptyDatesTimeouts: existing.emptyDatesTimeouts || new Map()
-                        };
-                        
                         // Organize entries by date for instant lookup
                         for (const e of all.entries) {
                             const list = store.byDate[e.date] || (store.byDate[e.date] = []);
                             list.push(e);
+                            store.entries.push(e);
                         }
                         
-                        clientCache.publicByUser.set(username, store);
-                        console.log(`Loaded ${all.entries.length} public entries for ${username} into cache`);
-                        return true;
+                        // Mark all dates that have entries as non-empty
+                        for (const date in store.byDate) {
+                            if (store.emptyDates.has(date)) {
+                                store.emptyDates.delete(date);
+                            }
+                        }
+                        
+                        console.log(`Loaded ${all.entries.length} public entries for ${username} (fully cached)`);
                     } else {
-                        // Even if no entries found, preserve existing cache structure
-                        const existing = clientCache.publicByUser.get(username) || { entries: [], byDate: {}, emptyDates: new Set(), emptyDatesTimeouts: new Map() };
-                        const store = { 
-                            entries: [], 
-                            byDate: {}, 
-                            emptyDates: existing.emptyDates || new Set(),
-                            emptyDatesTimeouts: existing.emptyDatesTimeouts || new Map()
-                        };
-                        clientCache.publicByUser.set(username, store);
-                        console.log(`No public entries found for ${username}, cached empty result`);
-                        return true;
+                        console.log(`No public entries found for ${username} (fully cached as empty)`);
                     }
+                    
+                    clientCache.publicByUser.set(username, store);
+                    return true;
                 } catch (error) {
                     console.error('Error loading public user data:', error);
                     return false;
@@ -1754,38 +1749,26 @@
                 function setMsg(text, ok, quiet) { try { if (!quiet) toast(text, ok); } catch (e) {} msg.textContent = ''; msg.style.display = 'none'; }
                 let currentLoadSeq = 0;
 
-                async function renderFromCacheOrFetch(force) {
-                    const cached = clientCache.publicByUser.get(username);
-                    
-                    // Check if this date is known to be empty (and not forcing refresh)
-                    if (!force && cached && cached.emptyDates instanceof Set && cached.emptyDates.has(date)) {
-                        node.querySelector('#pub-title').textContent = '';
-                        node.querySelector('#pub-content').textContent = '';
-                        setMsg('No entry for this date', false, true);
-                        return true;
-                    }
-                    
-                    // Check if we have data for this date (and not forcing refresh)
-                    if (!force && cached && cached.byDate && cached.byDate[date] && cached.byDate[date].length) {
-                        const e = cached.byDate[date][0];
-                        const pval = String(e.privacy || (e.isPrivate === true || e.isPrivate === 'true' ? 'private' : 'public')).toLowerCase();
-                        const icon = privacyIcon(pval);
-                        node.querySelector('#pub-title').textContent = (icon ? (icon + ' ') : '') + (e.title || '');
-                        node.querySelector('#pub-content').textContent = e.content || '';
-                        setMsg('Public entry', true, true);
-                        return true;
-                    }
-                    
-                    return false;
-                }
 
                 async function loadPublic(force) {
                     const seq = ++currentLoadSeq;
                     
-                    // Check if we already know this date is empty and we're not forcing refresh
-                    if (!force) {
-                        const cached = clientCache.publicByUser.get(username);
-                        if (cached && cached.emptyDates instanceof Set && cached.emptyDates.has(date)) {
+                    // Check if we have fully loaded data and this date is known to be empty
+                    const cached = clientCache.publicByUser.get(username);
+                    if (cached && cached.fullyLoaded && !force) {
+                        // Data is fully loaded, check cache first
+                        if (cached.byDate && cached.byDate[date] && cached.byDate[date].length > 0) {
+                            // Entry exists in cache
+                            const e = cached.byDate[date][0];
+                            const pval = String(e.privacy || (e.isPrivate === true || e.isPrivate === 'true' ? 'private' : 'public')).toLowerCase();
+                            const icon = privacyIcon(pval);
+                            node.querySelector('#pub-title').textContent = (icon ? (icon + ' ') : '') + (e.title || '');
+                            node.querySelector('#pub-content').textContent = e.content || '';
+                            setMsg('Public entry', true, true);
+                            hideOverlay();
+                            return;
+                        } else {
+                            // No entry for this date in fully loaded cache
                             node.querySelector('#pub-title').textContent = '';
                             node.querySelector('#pub-content').textContent = '';
                             setMsg('No entry for this date', false, true);
@@ -1794,116 +1777,57 @@
                         }
                     }
                     
-                    setMsg('Loading…', true, true);
+                    // Only show loading overlay if we don't have fully loaded data
+                    if (!cached || !cached.fullyLoaded) {
+                        setMsg('Loading…', true, true);
+                    }
+                    
                     try {
-                        // First, ensure we have comprehensive public data for this user
+                        // Load all data for this user (one-time comprehensive load)
                         await ensurePublicUserDataLoaded(username, force);
                         
-                        const servedFromCache = await renderFromCacheOrFetch(force);
-                        if (!servedFromCache) {
-                            // Only make API call if we don't have comprehensive data or we're forcing refresh
-                            const res = await apiGet({ action: 'getDiaryEntry', username, date, viewerUserId: (auth.user && auth.user.id) ? auth.user.id : '' });
-                            if (seq !== currentLoadSeq) return; // ignore stale
-                            if (res.success && res.entry) {
-                                const pval = String(res.entry.privacy || (res.entry.isPrivate === true || res.entry.isPrivate === 'true' ? 'private' : 'public')).toLowerCase();
+                        // After loading, render from cache (should always work now)
+                        const finalCached = clientCache.publicByUser.get(username);
+                        if (finalCached && finalCached.fullyLoaded) {
+                            if (finalCached.byDate && finalCached.byDate[date] && finalCached.byDate[date].length > 0) {
+                                // Entry exists
+                                const e = finalCached.byDate[date][0];
+                                const pval = String(e.privacy || (e.isPrivate === true || e.isPrivate === 'true' ? 'private' : 'public')).toLowerCase();
                                 const icon = privacyIcon(pval);
-                                node.querySelector('#pub-title').textContent = (icon ? (icon + ' ') : '') + (res.entry.title || '');
-                                node.querySelector('#pub-content').textContent = res.entry.content || '';
+                                node.querySelector('#pub-title').textContent = (icon ? (icon + ' ') : '') + (e.title || '');
+                                node.querySelector('#pub-content').textContent = e.content || '';
                                 setMsg('Public entry', true, true);
-                                
-                                // Add this entry to the cache for future instant access
-                                const existing = clientCache.publicByUser.get(username) || { entries: [], byDate: {}, emptyDates: new Set(), emptyDatesTimeouts: new Map() };
-                                if (!existing.byDate[date]) existing.byDate[date] = [];
-                                if (!existing.byDate[date].find(e => e.entryId === res.entry.entryId)) {
-                                    existing.byDate[date].push(res.entry);
-                                }
-                                if (!existing.entries.find(e => e.entryId === res.entry.entryId)) {
-                                    existing.entries.push(res.entry);
-                                }
-                                clientCache.publicByUser.set(username, existing);
                             } else {
-                                const needLogin = /not authorized|private/i.test(String(res.error || ''));
-                                const link = basePath() + '/';
-                                const ask = needLogin ? ' Please login to see friend-only posts.' : '';
-                                setMsg((res.error || 'Not found or private') + ask, false, true);
-                                if (needLogin && !auth.user) {
-                                    const hint = document.createElement('div');
-                                    hint.className = 'helper';
-                                    hint.style.marginTop = '8px';
-                                    const a = document.createElement('a');
-                                    a.href = link;
-                                    a.className = 'link';
-                                    a.textContent = 'Go to Home/Login';
-                                    hint.appendChild(a);
-                                    msg.appendChild(hint);
-                                }
-                                
-                                // Mark this date as empty to avoid future API calls (with timeout)
-                                const existing = clientCache.publicByUser.get(username) || { entries: [], byDate: {}, emptyDates: new Set(), emptyDatesTimeouts: new Map() };
-                                if (!(existing.emptyDates instanceof Set)) existing.emptyDates = new Set();
-                                if (!(existing.emptyDatesTimeouts instanceof Map)) existing.emptyDatesTimeouts = new Map();
-                                
-                                // Clear any existing timeout for this date
-                                const existingTimeout = existing.emptyDatesTimeouts.get(date);
-                                if (existingTimeout) clearTimeout(existingTimeout);
-                                
-                                // Add to empty dates
-                                existing.emptyDates.add(date);
-                                
-                                // Set a timeout to remove from empty dates after 2 minutes (reduced from 5 minutes)
-                                const timeout = setTimeout(() => {
-                                    const current = clientCache.publicByUser.get(username);
-                                    if (current && current.emptyDates instanceof Set) {
-                                        current.emptyDates.delete(date);
-                                        if (current.emptyDatesTimeouts instanceof Map) {
-                                            current.emptyDatesTimeouts.delete(date);
-                                        }
-                                    }
-                                }, 2 * 60 * 1000); // 2 minutes
-                                
-                                existing.emptyDatesTimeouts.set(date, timeout);
-                                clientCache.publicByUser.set(username, existing);
+                                // No entry for this date
+                                node.querySelector('#pub-title').textContent = '';
+                                node.querySelector('#pub-content').textContent = '';
+                                setMsg('No entry for this date', false, true);
                             }
+                        } else {
+                            setMsg('Failed to load data', false, true);
                         }
                         hideOverlay();
-                    } catch (e) { setMsg(e.message, false); hideOverlay(); }
+                    } catch (e) { 
+                        setMsg(e.message, false); 
+                        hideOverlay(); 
+                    }
                 }
 
                 loadPublic(false);
 
-                // Helper function to clear empty date cache for a specific date
-                function clearEmptyDateCache(targetDate) {
-                    const cached = clientCache.publicByUser.get(username);
-                    if (cached && cached.emptyDates instanceof Set) {
-                        cached.emptyDates.delete(targetDate);
-                    }
-                    if (cached && cached.emptyDatesTimeouts instanceof Map) {
-                        const timeout = cached.emptyDatesTimeouts.get(targetDate);
-                        if (timeout) {
-                            clearTimeout(timeout);
-                            cached.emptyDatesTimeouts.delete(targetDate);
-                        }
-                    }
-                }
-
-                // Prev/Next day navigation
+                // Prev/Next day navigation - no cache clearing needed since data is fully loaded
                 node.querySelector('#pub-detail-prev').addEventListener('click', () => {
                     const prev = addDaysIso(date, -1);
-                    // Clear empty cache for the previous date to allow fresh loading
-                    clearEmptyDateCache(prev);
                     history.pushState({}, '', basePath() + '/' + encodeURIComponent(username) + '/' + toDisplayDate(prev));
                     render();
                 });
                 node.querySelector('#pub-detail-next').addEventListener('click', () => {
                     const next = addDaysIso(date, 1);
-                    // Clear empty cache for the next date to allow fresh loading
-                    clearEmptyDateCache(next);
                     history.pushState({}, '', basePath() + '/' + encodeURIComponent(username) + '/' + toDisplayDate(next));
                     render();
                 });
                 node.querySelector('#pub-detail-refresh').addEventListener('click', async () => { 
-                    // Clear the empty date cache for this specific date to allow fresh fetch
-                    clearEmptyDateCache(date);
+                    // Force reload all data for this user
                     await loadPublic(true); 
                 });
                 node.querySelector('#pub-detail-back').addEventListener('click', () => { history.pushState({}, '', basePath() + '/' + encodeURIComponent(username)); render(); });
@@ -2102,20 +2026,12 @@
                 }
 
                 async function ensureEntries() {
-                    // If background all-data cache exists, use it
-                    const cachedUser = clientCache.publicByUser.get(username);
-                    if (cachedUser && Array.isArray(cachedUser.entries) && cachedUser.entries.length) {
-                        publicEntries = cachedUser.entries;
-                        return publicEntries;
-                    }
-                    if (publicEntries) return publicEntries;
-                    
-                    // Use the centralized data loading function
+                    // Use the centralized data loading function to get ALL entries
                     try {
                         const success = await ensurePublicUserDataLoaded(username, false);
                         if (success) {
                             const cached = clientCache.publicByUser.get(username);
-                            if (cached && Array.isArray(cached.entries)) {
+                            if (cached && cached.fullyLoaded && Array.isArray(cached.entries)) {
                                 publicEntries = cached.entries;
                                 return publicEntries;
                             }
@@ -2124,22 +2040,8 @@
                         console.error('Error ensuring public entries:', e);
                     }
                     
-                    // Fallback: Quick month fetch for fast first paint
-                    try {
-                        const monthStr = String(calYear) + '-' + String(calMonth + 1).padStart(2, '0');
-                        const res = await apiGet({ action: 'getPublicDiaryEntries', username, month: monthStr, maxContent: '160', viewerUserId: (auth.user && auth.user.id) ? auth.user.id : '' });
-                        publicEntries = (res.success && Array.isArray(res.entries)) ? res.entries : [];
-                        try {
-                            const existing = clientCache.publicByUser.get(username) || { entries: [], byDate: {}, emptyDates: new Set() };
-                            for (const e of publicEntries) {
-                                const list = existing.byDate[e.date] || (existing.byDate[e.date] = []);
-                                if (!list.find(x => x.date === e.date && x.title === e.title)) list.push(e);
-                            }
-                            existing.entries = existing.entries.concat(publicEntries);
-                            clientCache.publicByUser.set(username, existing);
-                        } catch (e) {}
-                    } catch (e) { publicEntries = []; }
-                    
+                    // Fallback if comprehensive loading fails
+                    publicEntries = [];
                     return publicEntries;
                 }
 
