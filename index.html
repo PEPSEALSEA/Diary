@@ -1671,6 +1671,48 @@
                 return node;
             }
 
+            // Centralized function to ensure public user data is loaded
+            async function ensurePublicUserDataLoaded(username, force = false) {
+                const cached = clientCache.publicByUser.get(username);
+                
+                // Check if we already have comprehensive data
+                const hasComprehensiveData = cached && 
+                                           Array.isArray(cached.entries) && 
+                                           cached.entries.length > 0 &&
+                                           cached.byDate && 
+                                           Object.keys(cached.byDate).length > 0;
+                
+                if (hasComprehensiveData && !force) {
+                    return true; // Data is already loaded
+                }
+                
+                try {
+                    console.log(`Preloading all public entries for ${username}...`);
+                    
+                    // First, try to get all entries for this user
+                    const all = await apiGet({ action: 'getPublicDiaryEntries', username, limit: '500', viewerUserId: (auth.user && auth.user.id) ? auth.user.id : '' });
+                    if (all.success && Array.isArray(all.entries)) {
+                        const store = { entries: all.entries, byDate: {}, emptyDates: new Set() };
+                        
+                        // Organize entries by date for instant lookup
+                        for (const e of all.entries) {
+                            const list = store.byDate[e.date] || (store.byDate[e.date] = []);
+                            list.push(e);
+                        }
+                        
+                        clientCache.publicByUser.set(username, store);
+                        console.log(`Loaded ${all.entries.length} public entries for ${username} into cache`);
+                        return true;
+                    } else {
+                        console.error('Failed to load public entries:', all.error);
+                        return false;
+                    }
+                } catch (error) {
+                    console.error('Error loading public user data:', error);
+                    return false;
+                }
+            }
+
             function PublicEntry(username, date) {
                 const node = el(`
       <div class="card">
@@ -1718,6 +1760,9 @@
                     const seq = ++currentLoadSeq;
                     setMsg('Loading…', true, true);
                     try {
+                        // First, ensure we have comprehensive public data for this user
+                        await ensurePublicUserDataLoaded(username, force);
+                        
                         const servedFromCache = await renderFromCacheOrFetch(force);
                         if (!servedFromCache) {
                             const res = await apiGet({ action: 'getDiaryEntry', username, date, viewerUserId: (auth.user && auth.user.id) ? auth.user.id : '' });
@@ -1751,27 +1796,6 @@
                             }
                         }
                         hideOverlay();
-                        if (!clientCache.publicByUser.has(username)) clientCache.publicByUser.set(username, { entries: [], byDate: {}, emptyDates: new Set() });
-                        (async function prefetchAllPublic() {
-                            try {
-                                const monthStr = date.slice(0, 7);
-                                const month = await apiGet({ action: 'getPublicDiaryEntries', username, month: monthStr, maxContent: '220', viewerUserId: (auth.user && auth.user.id) ? auth.user.id : '' });
-                                const storeExisting = clientCache.publicByUser.get(username) || { entries: [], byDate: {}, emptyDates: new Set() };
-                                if (!(storeExisting.emptyDates instanceof Set)) storeExisting.emptyDates = new Set();
-                                if (month.success && Array.isArray(month.entries)) {
-                                    for (const e of month.entries) { const list = storeExisting.byDate[e.date] || (storeExisting.byDate[e.date] = []); if (!list.find(x => x.date === e.date && x.title === e.title)) list.push(e); }
-                                    storeExisting.entries = storeExisting.entries.concat(month.entries);
-                                    clientCache.publicByUser.set(username, storeExisting);
-                                }
-                                const all = await apiGet({ action: 'getPublicDiaryEntries', username, limit: '500', viewerUserId: (auth.user && auth.user.id) ? auth.user.id : '' });
-                                if (all.success && Array.isArray(all.entries)) {
-                                    const store = { entries: all.entries, byDate: {}, emptyDates: storeExisting.emptyDates };
-                                    for (const e of all.entries) { const list = store.byDate[e.date] || (store.byDate[e.date] = []); list.push(e); }
-                                    clientCache.publicByUser.set(username, store);
-                                    await renderFromCacheOrFetch(false);
-                                }
-                            } catch (e) { }
-                        })();
                     } catch (e) { setMsg(e.message, false); hideOverlay(); }
                 }
 
@@ -1982,7 +2006,22 @@
                         return publicEntries;
                     }
                     if (publicEntries) return publicEntries;
-                    // Quick month fetch for fast first paint
+                    
+                    // Use the centralized data loading function
+                    try {
+                        const success = await ensurePublicUserDataLoaded(username, false);
+                        if (success) {
+                            const cached = clientCache.publicByUser.get(username);
+                            if (cached && Array.isArray(cached.entries)) {
+                                publicEntries = cached.entries;
+                                return publicEntries;
+                            }
+                        }
+                    } catch (e) { 
+                        console.error('Error ensuring public entries:', e);
+                    }
+                    
+                    // Fallback: Quick month fetch for fast first paint
                     try {
                         const monthStr = String(calYear) + '-' + String(calMonth + 1).padStart(2, '0');
                         const res = await apiGet({ action: 'getPublicDiaryEntries', username, month: monthStr, maxContent: '160', viewerUserId: (auth.user && auth.user.id) ? auth.user.id : '' });
@@ -1997,21 +2036,7 @@
                             clientCache.publicByUser.set(username, existing);
                         } catch (e) {}
                     } catch (e) { publicEntries = []; }
-                    // Background prefetch of all public entries for user
-                    (async function prefetchAll() {
-                        try {
-                            const all = await apiGet({ action: 'getPublicDiaryEntries', username, limit: '500', maxContent: '220', viewerUserId: (auth.user && auth.user.id) ? auth.user.id : '' });
-                            if (all.success && Array.isArray(all.entries)) {
-                                const existingStore = clientCache.publicByUser.get(username) || { entries: [], byDate: {}, emptyDates: new Set() };
-                                const store = { entries: all.entries, byDate: {}, emptyDates: (existingStore.emptyDates instanceof Set) ? existingStore.emptyDates : new Set() };
-                                for (const e of all.entries) { const list = store.byDate[e.date] || (store.byDate[e.date] = []); list.push(e); }
-                                clientCache.publicByUser.set(username, store);
-                                publicEntries = all.entries;
-                                // re-render current month with full data once ready
-                                renderCalendar();
-                            }
-                        } catch (e) { }
-                    })();
+                    
                     return publicEntries;
                 }
 
