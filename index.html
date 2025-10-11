@@ -190,6 +190,33 @@
             color: #cbd5e1
         }
 
+        .entry-status {
+            display: block !important;
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .entry-status.new-entry {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--ok);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .entry-status.update-entry {
+            background: rgba(59, 130, 246, 0.1);
+            color: var(--accent);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+        }
+
+        .entry-status.no-change {
+            background: rgba(156, 163, 175, 0.1);
+            color: var(--muted);
+            border: 1px solid rgba(156, 163, 175, 0.2);
+        }
+
         .error {
             color: #fecaca
         }
@@ -309,7 +336,7 @@
         <div class="footer">Make By PEPSEALSEA ©2025
         </div>
     </div>
-    <div id="app-overlay">
+    <div id="app-overlay" style="display: grid;">
         <div class="box">
             <div id="app-overlay-title" style="font-weight:600;margin-bottom:6px">Loading…</div>
             <div id="app-overlay-helper" class="helper">Preparing your diary</div>
@@ -392,6 +419,18 @@
     </div>
 
     <script>
+        // Show loading overlay immediately when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            const overlay = document.getElementById('app-overlay');
+            if (overlay) {
+                overlay.style.display = 'grid';
+                const title = document.getElementById('app-overlay-title');
+                const helper = document.getElementById('app-overlay-helper');
+                if (title) title.textContent = 'Loading…';
+                if (helper) helper.textContent = 'Preparing your diary';
+            }
+        });
+
         (function () {
             const API_URL = 'https://script.google.com/macros/s/AKfycbxR7BQFNg_LHPspcMYXLpdwMQ6Ql6fzr1DVDryXCYdW4aPJlvb4oXFPx-Tng4ofmQLvmw/exec';
             const OTP_API_URL = 'https://script.google.com/macros/s/AKfycbzEBBDzJvZvCWYJsoa0HwPwrPWu0AQAbnj8d0uUUNY2xYcFXiIagSsD1GEmHvKgLT5Q2w/exec';
@@ -578,6 +617,9 @@
             function render() {
                 const mount = q('#route-view');
                 mount.innerHTML = '';
+
+                // Show loading overlay by default
+                showOverlay('Loading…', 'Preparing your diary');
 
                 const qp = new URLSearchParams(window.location.search);
                 const pathParam = qp.get('path');
@@ -831,6 +873,9 @@
               <option value="private">Private (only you)</option>
             </select>
             <div class="spacer"></div>
+            <div id="entry-status" class="entry-status no-change" style="font-size:12px;padding:4px 8px;border-radius:4px;margin-bottom:8px;display:none;">
+              No changes detected
+            </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <button id="btn-save">Save</button>
               <button id="btn-update" class="ghost">Update</button>
@@ -1190,6 +1235,38 @@
                 }
 
                 let currentLoadSeq = 0;
+                
+                // Smart entry detection function
+                function detectNewEntryIntent() {
+                    const title = titleInput.value.trim();
+                    const content = contentInput.value.trim();
+                    
+                    // Check if user has started typing something meaningful
+                    if (title.length > 0 || content.length > 0) {
+                        // If there's content but no existing entry, suggest new entry
+                        if (!currentHasEntry) {
+                            return 'new_entry';
+                        }
+                        // If there's content and existing entry, check if it's different
+                        if (currentHasEntry && lastSavedSnapshot) {
+                            const titleChanged = title !== (lastSavedSnapshot.title || '');
+                            const contentChanged = content !== (lastSavedSnapshot.content || '');
+                            if (titleChanged || contentChanged) {
+                                return 'update_entry';
+                            }
+                        }
+                    }
+                    
+                    // Check for common "new entry" indicators in title
+                    const newEntryKeywords = ['new', 'today', 'entry', 'diary', 'note', 'thought'];
+                    const titleLower = title.toLowerCase();
+                    if (newEntryKeywords.some(keyword => titleLower.includes(keyword))) {
+                        return 'new_entry';
+                    }
+                    
+                    return 'no_change';
+                }
+
                 async function load(force) {
                     clearMsg();
                     try {
@@ -1207,10 +1284,13 @@
                         
                         // Use preloaded data if available, otherwise fall back to API
                         let entries = [];
-                        if (clientCache.userLoadedAll && clientCache.userEntriesByDate && clientCache.userEntriesByDate[d]) {
+                        const hasPreloadedData = clientCache.userLoadedAll && clientCache.userEntriesByDate && clientCache.userEntriesByDate[d];
+                        const isKnownEmpty = !force && clientCache.userEmptyDates && clientCache.userEmptyDates.has(d);
+                        
+                        if (hasPreloadedData) {
                             // Use preloaded data - instant response
                             entries = clientCache.userEntriesByDate[d];
-                        } else if (!force && clientCache.userEmptyDates && clientCache.userEmptyDates.has(d)) {
+                        } else if (isKnownEmpty) {
                             // Known empty date from cache
                             titleInput.value = '';
                             contentInput.value = '';
@@ -1221,9 +1301,14 @@
                             setMsg('No entry for ' + toDisplayDate(d), false, true);
                             return;
                         } else {
+                            // Only show loading overlay if we don't have preloaded data
+                            if (showOverlay) showOverlay('Loading…', 'Please wait');
+                            
                             // Fallback to API call if data not preloaded
                             const entriesRes = await apiGet({ action: 'listUserEntriesByDate', userId: user.id, date: d });
                             entries = (entriesRes && entriesRes.success && Array.isArray(entriesRes.entries)) ? entriesRes.entries : [];
+                            
+                            if (showOverlay) hideOverlay();
                         }
                         
                         // Populate selector
@@ -1265,11 +1350,20 @@
                         }
                         updateTitleIconFromPrivacy();
                         applyEditMode();
+                        updateEntryStatus();
                     } catch (e) { setMsg(e.message, false); }
                 }
 
                 async function save(showBusy = true) {
                     clearMsg();
+                    
+                    // Smart detection: check if user really wants to create new entry
+                    const intent = detectNewEntryIntent();
+                    if (intent === 'no_change') {
+                        setMsg('No changes to save', false);
+                        return;
+                    }
+                    
                     const payload = {
                         action: 'saveDiaryEntry',
                         userId: user.id,
@@ -1311,6 +1405,14 @@
 
                 async function update(showBusy = true) {
                     clearMsg();
+                    
+                    // Smart detection: check if user really wants to update entry
+                    const intent = detectNewEntryIntent();
+                    if (intent === 'no_change') {
+                        setMsg('No changes to update', false);
+                        return;
+                    }
+                    
                     const payload = currentEntryId ? {
                         action: 'updateDiaryEntryById',
                         entryId: currentEntryId,
@@ -1381,12 +1483,41 @@
                     finally { hideOverlay(); }
                 }
 
+                // Add real-time entry detection feedback
+                function updateEntryStatus() {
+                    const intent = detectNewEntryIntent();
+                    const statusEl = node.querySelector('#entry-status');
+                    if (statusEl) {
+                        switch (intent) {
+                            case 'new_entry':
+                                statusEl.textContent = 'Ready to create new entry';
+                                statusEl.className = 'entry-status new-entry';
+                                statusEl.style.display = 'block';
+                                break;
+                            case 'update_entry':
+                                statusEl.textContent = 'Ready to update existing entry';
+                                statusEl.className = 'entry-status update-entry';
+                                statusEl.style.display = 'block';
+                                break;
+                            case 'no_change':
+                                statusEl.textContent = 'No changes detected';
+                                statusEl.className = 'entry-status no-change';
+                                statusEl.style.display = 'none';
+                                break;
+                        }
+                    }
+                }
+
+                // Add input event listeners for real-time feedback
+                titleInput.addEventListener('input', updateEntryStatus);
+                contentInput.addEventListener('input', updateEntryStatus);
+
                 node.querySelector('#btn-save').addEventListener('click', save);
                 node.querySelector('#btn-update').addEventListener('click', update);
                 node.querySelector('#btn-delete').addEventListener('click', remove);
                 if (entrySelect) entrySelect.addEventListener('change', () => {
                     const id = entrySelect.value;
-                    if (!id) { currentEntryId = null; titleInput.value = ''; contentInput.value = ''; privacySelect.value = 'public'; updateTitleIconFromPrivacy(); applyEditMode(); return; }
+                    if (!id) { currentEntryId = null; titleInput.value = ''; contentInput.value = ''; privacySelect.value = 'public'; updateTitleIconFromPrivacy(); applyEditMode(); updateEntryStatus(); return; }
                     const d = dateInput.value || today();
                     const list = clientCache.userEntriesByDate[d] || [];
                     const e = list.find(x => x.entryId === id) || (clientCache.userEntries || []).find(x => x.entryId === id);
@@ -1396,6 +1527,7 @@
                         contentInput.value = e.content || '';
                         setPrivacyValueSafe(e.privacy, e.isPrivate);
                         applyEditMode();
+                        updateEntryStatus();
                     }
                 });
                 if (btnNewEntry) btnNewEntry.addEventListener('click', () => { entrySelect.value = ''; entrySelect.dispatchEvent(new Event('change')); });
@@ -1420,14 +1552,27 @@
                 
                 (async function prefetchAll() {
                     try {
+                        showOverlay('Loading all data…', 'Please wait');
+                        
+                        // Load all user entries at once for instant access
                         const res = await apiGet({ action: 'getUserDiaryEntries', userId: user.id });
                         if (res.success && Array.isArray(res.entries)) {
                             clientCache.userEntries = res.entries;
                             clientCache.userEntriesByDate = {};
+                            
+                            // Organize entries by date for instant lookup
                             for (const e of res.entries) {
                                 const list = clientCache.userEntriesByDate[e.date] || (clientCache.userEntriesByDate[e.date] = []);
                                 list.push(e);
                             }
+                            
+                            // Mark all dates with entries as non-empty
+                            for (const date in clientCache.userEntriesByDate) {
+                                if (clientCache.userEmptyDates) {
+                                    clientCache.userEmptyDates.delete(date);
+                                }
+                            }
+                            
                             clientCache.userLoadedAll = true;
                             
                             // Now load today's entry using preloaded data (instant)
@@ -1438,19 +1583,21 @@
                             renderCalendar();
                             loadRecent();
                             
-                            setMsg('Ready', true, true);
-                            setTimeout(() => clearMsg(), 1000);
+                            setMsg('All data loaded - instant switching enabled', true, true);
+                            setTimeout(() => clearMsg(), 2000);
                         } else { 
                             // Fallback if prefetch fails
                             await load(false);
                             applyEditMode();
-                            clearMsg(); 
+                            setMsg('Limited data loaded - some features may be slower', false, true);
                         }
                     } catch (e) { 
                         // Fallback if prefetch fails
                         await load(false);
                         applyEditMode();
-                        clearMsg(); 
+                        setMsg('Failed to preload data - using on-demand loading', false, true);
+                    } finally {
+                        hideOverlay();
                     }
                 })();
                 return node;
