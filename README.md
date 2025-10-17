@@ -1,6 +1,7 @@
 # Diary Web App
 A simple and intuitive web-based diary application where you can write, organize, and share your daily thoughts and experiences.
 
+
 ## 🌟 Features
 - Personal Diary Entries - Create and manage your own diary entries
 - Flexible Privacy Settings - Control who sees your entries:
@@ -10,9 +11,11 @@ A simple and intuitive web-based diary application where you can write, organize
 - Friend System - Connect with friends and share your stories
 - Public Feed - Discover and read public diaries from other users
 - User-Friendly Interface - Clean and easy to navigate
+  
 
 ## 🚀 Live Demo
 Check out the live version here: https://pepsealsea.github.io/Diary/
+
 
 ## 💡 How It Works
 Create Your Diary - Start writing about your day, thoughts, or anything you want to remember
