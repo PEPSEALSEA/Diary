@@ -340,6 +340,14 @@
         <div class="box">
             <div id="app-overlay-title" style="font-weight:600;margin-bottom:6px">Loading…</div>
             <div id="app-overlay-helper" class="helper">Preparing your diary</div>
+            <div id="app-overlay-loading-wheel" style="display:none;margin-top:12px;">
+                <svg width="24" height="24" viewBox="0 0 24 24" style="animation: spin 1s linear infinite;">
+                    <circle cx="12" cy="12" r="10" stroke="var(--accent)" stroke-width="3" fill="none" stroke-dasharray="31.4 31.4"/>
+                </svg>
+                <style>
+                    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+                </style>
+            </div>
         </div>
     </div>
     <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
@@ -426,8 +434,12 @@
                 overlay.style.display = 'grid';
                 const title = document.getElementById('app-overlay-title');
                 const helper = document.getElementById('app-overlay-helper');
-                if (title) title.textContent = 'Loading…';
-                if (helper) helper.textContent = 'Preparing your diary';
+                const wheel = document.getElementById('app-overlay-loading-wheel');
+                // Check for existing auth cookie
+                const hasAuth = document.cookie.includes('diary_user=');
+                if (title) title.textContent = hasAuth ? 'Loading your diary...' : 'Welcome to Daily Diary';
+                if (helper) helper.textContent = hasAuth ? 'Fetching your data...' : 'Please log in to continue';
+                if (wheel) wheel.style.display = hasAuth ? 'block' : 'none';
             }
         });
 
@@ -665,12 +677,14 @@
             function show(elm) { elm.style.display = ''; }
             function hide(elm) { elm.style.display = 'none'; }
             function hideOverlay() { const o = q('#app-overlay'); if (o) o.style.display = 'none'; }
-            function showOverlay(title, helper) {
+            function showOverlay(title, helper, showLoadingWheel) {
                 const o = q('#app-overlay'); if (!o) return;
                 const t = q('#app-overlay-title');
                 const h = q('#app-overlay-helper');
+                const w = q('#app-overlay-loading-wheel');
                 if (t) t.textContent = title || 'Working…';
                 if (h) h.textContent = helper || '';
+                if (w) w.style.display = showLoadingWheel ? 'block' : 'none';
                 o.style.display = 'grid';
             }
 
@@ -721,8 +735,13 @@
                 const mount = q('#route-view');
                 mount.innerHTML = '';
 
-                // Show loading overlay by default
-                showOverlay('Loading…', 'Preparing your diary');
+                // Show different loading states based on authentication
+                const hasAuth = !!auth.user;
+                showOverlay(
+                    hasAuth ? 'Loading your diary...' : 'Welcome to Daily Diary', 
+                    hasAuth ? 'Fetching your data...' : 'Please log in to continue',
+                    hasAuth // Only show loading wheel when authenticated
+                );
 
                 const qp = new URLSearchParams(window.location.search);
                 const pathParam = qp.get('path');
@@ -1637,7 +1656,7 @@
                 
                 (async function prefetchAll() {
                     try {
-                        showOverlay('Loading all data…', 'Please wait');
+                        showOverlay('Loading all data…', 'Please wait', true); // Show loading wheel for data fetch
                         
                         // Use centralized data loading function
                         const success = await ensureUserDataLoaded(true); // Force refresh
