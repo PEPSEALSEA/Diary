@@ -428,18 +428,28 @@
 
     <script>
         // Show loading overlay immediately when page loads
+        // Only show the blocking overlay if we detect an existing auth cookie.
+        // If no auth cookie is present, keep the overlay hidden so the login UI is usable.
         document.addEventListener('DOMContentLoaded', function() {
             const overlay = document.getElementById('app-overlay');
             if (overlay) {
-                overlay.style.display = 'grid';
                 const title = document.getElementById('app-overlay-title');
                 const helper = document.getElementById('app-overlay-helper');
                 const wheel = document.getElementById('app-overlay-loading-wheel');
                 // Check for existing auth cookie
                 const hasAuth = document.cookie.includes('diary_user=');
-                if (title) title.textContent = hasAuth ? 'Loading your diary...' : 'Welcome to Daily Diary';
-                if (helper) helper.textContent = hasAuth ? 'Fetching your data...' : 'Please log in to continue';
-                if (wheel) wheel.style.display = hasAuth ? 'block' : 'none';
+                if (hasAuth) {
+                    overlay.style.display = 'grid';
+                    if (title) title.textContent = 'Loading your diary...';
+                    if (helper) helper.textContent = 'Fetching your data...';
+                    if (wheel) wheel.style.display = 'block';
+                } else {
+                    // Ensure overlay stays hidden for unauthenticated users so they can interact with the login modal
+                    overlay.style.display = 'none';
+                    if (wheel) wheel.style.display = 'none';
+                    if (title) title.textContent = 'Welcome to Daily Diary';
+                    if (helper) helper.textContent = 'Please log in to continue';
+                }
             }
         });
 
@@ -735,13 +745,15 @@
                 const mount = q('#route-view');
                 mount.innerHTML = '';
 
-                // Show different loading states based on authentication
+                // Show loading overlay only when we are authenticated — unauthenticated users
+                // should not see a blocking overlay so they can use the login UI immediately.
                 const hasAuth = !!auth.user;
-                showOverlay(
-                    hasAuth ? 'Loading your diary...' : 'Welcome to Daily Diary', 
-                    hasAuth ? 'Fetching your data...' : 'Please log in to continue',
-                    hasAuth // Only show loading wheel when authenticated
-                );
+                if (hasAuth) {
+                    showOverlay('Loading your diary...', 'Fetching your data...', true);
+                } else {
+                    // Make sure overlay is hidden for unauthenticated users
+                    hideOverlay();
+                }
 
                 const qp = new URLSearchParams(window.location.search);
                 const pathParam = qp.get('path');
