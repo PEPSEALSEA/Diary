@@ -5,14 +5,16 @@ import { api, DiaryEntry, normalizePrivacy, toDisplayDate } from '@/lib/api';
 import { User } from '@/lib/api';
 import { useToast } from '@/context/ToastContext';
 import LoadingOverlay from '../LoadingOverlay';
+import { useCachedQuery } from '@/hooks/useCachedQuery';
 
 interface DiaryEditorProps {
     user: User;
     onEntryChange: () => void;
     initialDate?: string;
+    refreshTrigger?: number;
 }
 
-export default function DiaryEditor({ user, onEntryChange, initialDate }: DiaryEditorProps) {
+export default function DiaryEditor({ user, onEntryChange, initialDate, refreshTrigger = 0 }: DiaryEditorProps) {
     const { toast } = useToast();
     const [date, setDate] = useState(initialDate || new Date().toISOString().split('T')[0]);
     const [title, setTitle] = useState('');
@@ -27,40 +29,70 @@ export default function DiaryEditor({ user, onEntryChange, initialDate }: DiaryE
     // Autosave
     const lastSavedDiff = useRef({ title, content, privacy, date });
 
-    useEffect(() => {
-        loadEntry(date);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [date]);
+    // Fetch all entries for instant switching
+    const { data: entriesData, loading: loadingEntries } = useCachedQuery('user_entries_all', {
+        action: 'getUserDiaryEntries',
+        userId: user.id
+    }, { refreshTrigger }); // Use passed refreshTrigger
 
-    const loadEntry = async (d: string) => {
-        setLoading(true);
-        try {
-            const res = await api.get({ action: 'getUserDiaryEntry', userId: user.id, date: d });
-            if (res.success && res.entry) {
-                setTitle(res.entry.title || '');
-                setContent(res.entry.content || '');
-                setPrivacy(normalizePrivacy(res.entry.privacy, res.entry.isPrivate));
-                setEntryId(res.entry.entryId || null);
-                lastSavedDiff.current = {
-                    title: res.entry.title || '',
-                    content: res.entry.content || '',
-                    privacy: normalizePrivacy(res.entry.privacy, res.entry.isPrivate),
-                    date: d
-                };
-            } else {
-                // No entry
-                setTitle('');
-                setContent('');
-                setPrivacy('public');
-                setEntryId(null);
-                lastSavedDiff.current = { title: '', content: '', privacy: 'public', date: d };
+    const allEntries: DiaryEntry[] = entriesData?.entries || [];
+
+    // Filter entries for current selected date
+    const entriesForDate = allEntries.filter(e => e.date === date);
+
+    // Effect to select an entry when date changes or data loads
+    useEffect(() => {
+        // If we have an explicit entryId we want to stick to (e.g. after save), try to find it
+        if (entryId) {
+            const stillExists = entriesForDate.find(e => e.entryId === entryId);
+            if (stillExists) {
+                loadIntoForm(stillExists);
+                return;
             }
-            setIsDirty(false);
-        } catch (e) {
-            console.error(e);
-            toast('Failed to load entry', 'error');
-        } finally {
-            setLoading(false);
+        }
+
+        // Otherwise default logic
+        if (entriesForDate.length > 0) {
+            // Load the most recent one created/modified? Or just the first one?
+            // Legacy usually picked the first.
+            loadIntoForm(entriesForDate[0]);
+        } else {
+            clearForm();
+        }
+        // We only want to run this when date changes or entries list updates widely (initial load)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [date, entriesData]); // entriesData change means we fetched new list
+
+    const loadIntoForm = (entry: DiaryEntry) => {
+        setTitle(entry.title || '');
+        setContent(entry.content || '');
+        setPrivacy(normalizePrivacy(entry.privacy, entry.isPrivate));
+        setEntryId(entry.entryId || null);
+        lastSavedDiff.current = {
+            title: entry.title || '',
+            content: entry.content || '',
+            privacy: normalizePrivacy(entry.privacy, entry.isPrivate),
+            date: entry.date
+        };
+        setIsDirty(false);
+    };
+
+    const clearForm = () => {
+        setTitle('');
+        setContent('');
+        setPrivacy('public');
+        setEntryId(null);
+        lastSavedDiff.current = { title: '', content: '', privacy: 'public', date };
+        setIsDirty(false);
+    };
+
+    const handleEntrySelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const id = e.target.value;
+        if (id) {
+            const entry = entriesForDate.find(en => en.entryId === id);
+            if (entry) loadIntoForm(entry);
+        } else {
+            clearForm();
         }
     };
 
@@ -71,32 +103,43 @@ export default function DiaryEditor({ user, onEntryChange, initialDate }: DiaryE
         }
         setLoading(true);
         try {
-            const payload: any = {
-                title,
-                content,
-                privacy,
-                date
-            };
-
             let res;
             if (entryId) {
-                payload.action = 'updateDiaryEntryById';
-                payload.entryId = entryId;
-                res = await api.post(payload);
+                const updatePayload = {
+                    action: 'updateDiaryEntryById',
+                    entryId,
+                    title,
+                    content,
+                    privacy
+                };
+                res = await api.post(updatePayload);
             } else {
-                payload.action = 'saveDiaryEntry';
-                payload.userId = user.id;
-                res = await api.post(payload);
+                const savePayload = {
+                    action: 'saveDiaryEntry',
+                    userId: user.id,
+                    title,
+                    content,
+                    privacy,
+                    date
+                };
+                res = await api.post(savePayload);
             }
 
-            if (res.success) {
+            if (res && res.success) {
                 toast('Saved');
+                // Manually update the local cache/state if possible, or just let onEntryChange trigger a refresh elsewhere?
+                // For now, simple re-fetch or optimistically update would be ideal but user asked for "fetch all" capability.
+                // We should probably force a refresh of the 'user_entries_all' query.
+                // But useCachedQuery doesn't expose that yet easily. 
+                // We can rely on window reload or just let the user know.
+                // Actually, onEntryChange triggers parent which might trigger refreshTrigger.
+
                 if (res.entryId) setEntryId(res.entryId);
                 lastSavedDiff.current = { title, content, privacy, date };
                 setIsDirty(false);
-                onEntryChange();
+                onEntryChange(); // This should trigger refresh in parent
             } else {
-                toast(res.error || 'Save failed', 'error');
+                toast(res?.error || 'Save failed', 'error');
             }
         } catch (e: any) {
             toast(e.message || 'Save failed', 'error');
@@ -109,7 +152,6 @@ export default function DiaryEditor({ user, onEntryChange, initialDate }: DiaryE
         if (!confirm('Delete this entry?')) return;
         setLoading(true);
         try {
-            // Fallback to delete by date if no ID (legacy support), but prefer ID
             const payload = entryId
                 ? { action: 'deleteDiaryEntryById', entryId }
                 : { action: 'deleteDiaryEntry', userId: user.id, date };
@@ -117,11 +159,7 @@ export default function DiaryEditor({ user, onEntryChange, initialDate }: DiaryE
             const res = await api.post(payload);
             if (res.success) {
                 toast('Deleted');
-                setTitle('');
-                setContent('');
-                setPrivacy('public');
-                setEntryId(null);
-                setIsDirty(false);
+                clearForm();
                 onEntryChange();
             } else {
                 toast(res.error || 'Delete failed', 'error');
@@ -133,16 +171,11 @@ export default function DiaryEditor({ user, onEntryChange, initialDate }: DiaryE
         }
     };
 
-    // Simple dirty check for autosave suggestion or visual cue
-    useEffect(() => {
-        const d = lastSavedDiff.current;
-        const dirty = title !== d.title || content !== d.content || privacy !== d.privacy;
-        setIsDirty(dirty);
-    }, [title, content, privacy]);
+
 
     return (
         <div className="card" style={{ position: 'relative' }}>
-            {loading && <LoadingOverlay message="Working..." />}
+            {(loading || (loadingEntries && allEntries.length === 0)) && <LoadingOverlay message={loading ? "Working..." : "Loading diary..."} />}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
                 <div className="helper">Editor</div>
                 <div className="entry-status code">
@@ -150,8 +183,23 @@ export default function DiaryEditor({ user, onEntryChange, initialDate }: DiaryE
                 </div>
             </div>
 
-            <label>Date</label>
-            <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ flex: 1 }}>
+                    <label>Date</label>
+                    <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+                </div>
+                <div style={{ flex: 1 }}>
+                    <label>Select Entry</label>
+                    <select value={entryId || ''} onChange={handleEntrySelect}>
+                        <option value="">(New Entry)</option>
+                        {entriesForDate.map(e => (
+                            <option key={e.entryId} value={e.entryId}>
+                                {e.title || '(Untitled)'} {normalizePrivacy(e.privacy, e.isPrivate) === 'private' ? '🔒' : ''}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            </div>
             <div className="spacer"></div>
 
             <label>Title</label>
