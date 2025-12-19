@@ -173,13 +173,64 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
 
 
 
+    const [autoSaving, setAutoSaving] = useState(false);
+
+    // Auto-save logic
+    useEffect(() => {
+        if (!isDirty || loading) return;
+
+        const timer = setTimeout(() => {
+            handleAutoSave();
+        }, 2000); // 2s debounce
+
+        return () => clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [title, content, privacy, isDirty]);
+
+    const handleAutoSave = async () => {
+        if (!content.trim() && !title.trim()) return;
+        setAutoSaving(true);
+        try {
+            let res;
+            if (entryId) {
+                res = await api.post({
+                    action: 'updateDiaryEntryById',
+                    entryId,
+                    title,
+                    content,
+                    privacy
+                });
+            } else {
+                res = await api.post({
+                    action: 'saveDiaryEntry',
+                    userId: user.id,
+                    title,
+                    content,
+                    privacy,
+                    date
+                });
+            }
+
+            if (res && res.success) {
+                if (res.entryId) setEntryId(res.entryId);
+                lastSavedDiff.current = { title, content, privacy, date };
+                setIsDirty(false);
+                onEntryChange();
+            }
+        } catch (e) {
+            console.error('Auto-save failed', e);
+        } finally {
+            setAutoSaving(false);
+        }
+    };
+
     return (
         <div className="card" style={{ position: 'relative' }}>
             {(loading || (loadingEntries && allEntries.length === 0)) && <LoadingOverlay message={loading ? "Working..." : "Loading diary..."} />}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
                 <div className="helper">Editor</div>
-                <div className="entry-status code">
-                    {isDirty ? 'Unsaved changes' : 'Saved'}
+                <div className="entry-status code" style={{ color: isDirty ? 'var(--accent-2)' : 'var(--muted)' }}>
+                    {autoSaving ? 'Auto-saving...' : (isDirty ? 'Unsaved changes' : 'Saved')}
                 </div>
             </div>
 
