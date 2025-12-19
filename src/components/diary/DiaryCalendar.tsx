@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { api, DiaryEntry, toDisplayDate } from '@/lib/api';
-import { User } from '@/lib/api';
+import React, { useState } from 'react';
+import { DiaryEntry, toDisplayDate, ApiResponse, User } from '@/lib/api';
 import Link from 'next/link';
 import LoadingOverlay from '../LoadingOverlay';
+import { useCachedQuery } from '@/hooks/useCachedQuery';
 
 interface DiaryCalendarProps {
     user: User;
@@ -13,34 +13,16 @@ interface DiaryCalendarProps {
 
 export default function DiaryCalendar({ user, refreshTrigger }: DiaryCalendarProps) {
     const [date, setDate] = useState(new Date());
-    const [entries, setEntries] = useState<DiaryEntry[]>([]);
-    const [loading, setLoading] = useState(false);
 
-    useEffect(() => {
-        loadMonth();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [date.getFullYear(), date.getMonth(), refreshTrigger]);
+    const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 
-    const loadMonth = async () => {
-        setLoading(true);
-        try {
-            const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-            const res = await api.get({
-                action: 'getUserDiaryEntries',
-                userId: user.id,
-                month: monthStr
-            });
-            if (res.success && res.entries) {
-                setEntries(res.entries);
-            } else {
-                setEntries([]);
-            }
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setLoading(false);
-        }
-    };
+    const { data, loading, validating } = useCachedQuery<ApiResponse>(
+        'calendar',
+        { action: 'getUserDiaryEntries', userId: user.id, month: monthStr },
+        { refreshTrigger }
+    );
+
+    const entries = data?.entries || [];
 
     const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
     const firstDay = new Date(date.getFullYear(), date.getMonth(), 1).getDay(); // 0 = Sunday
@@ -90,6 +72,8 @@ export default function DiaryCalendar({ user, refreshTrigger }: DiaryCalendarPro
     return (
         <div className="card" style={{ position: 'relative' }}>
             {loading && <LoadingOverlay message="Loading month..." />}
+            {validating && !loading && <div style={{ position: 'absolute', top: 10, right: 10, fontSize: 10, opacity: 0.5 }}>Updating...</div>}
+
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                 <button className="ghost" onClick={() => changeMonth(-1)}>Prev</button>
                 <span className="badge" style={{ fontSize: 14 }}>{date.toLocaleString('default', { month: 'long', year: 'numeric' })}</span>
