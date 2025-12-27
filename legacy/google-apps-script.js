@@ -1,4 +1,4 @@
-const SHEET_ID = '1OYSzg0ybstarkDfxSZL9SA_gW6D5f8_icnqH7BLoblE'; 
+const SHEET_ID = '1OYSzg0ybstarkDfxSZL9SA_gW6D5f8_icnqH7BLoblE';
 const USERS_SHEET_NAME = 'Users';
 const DIARY_ENTRIES_SHEET_NAME = 'DiaryEntries';
 const FRIENDS_SHEET_NAME = 'Friends';
@@ -22,13 +22,13 @@ function cacheGetJson(key) {
 function cachePutJson(key, value, seconds) {
   try {
     CacheService.getScriptCache().put(key, JSON.stringify(value), seconds);
-  } catch (e) {}
+  } catch (e) { }
 }
 
 function cacheRemove(key) {
   try {
     CacheService.getScriptCache().remove(key);
-  } catch (e) {}
+  } catch (e) { }
 }
 
 // ===== ROW-LEVEL INDEXES (accelerate lookups without changing API) =====
@@ -54,7 +54,7 @@ function getUsersIndex() {
       if (username) { usernameToRow[username] = rowNum; }
     }
     const idx = { emailToRow: emailToRow, usernameToRow: usernameToRow, idToRow: idToRow };
-    try { CacheService.getScriptCache().put(key, JSON.stringify(idx), 600); } catch (e) {}
+    try { CacheService.getScriptCache().put(key, JSON.stringify(idx), 600); } catch (e) { }
     return idx;
   } catch (e) {
     return { emailToRow: {}, usernameToRow: {}, idToRow: {} };
@@ -81,7 +81,7 @@ function getDiaryIndexForUser(userId) {
       if (date) { byDate[date] = i + 1; }
     }
     const idx = { byDate: byDate };
-    try { CacheService.getScriptCache().put(key, JSON.stringify(idx), 600); } catch (e) {}
+    try { CacheService.getScriptCache().put(key, JSON.stringify(idx), 600); } catch (e) { }
     return idx;
   } catch (e) {
     return { byDate: {} };
@@ -107,7 +107,7 @@ function doGet(e) {
       const userId = e.parameter.userId;
       const date = e.parameter.date;
       return listUserEntriesByDate(userId, date);
-  } else if (action === 'getDiaryEntry') {
+    } else if (action === 'getDiaryEntry') {
       const username = e.parameter.username;
       const date = e.parameter.date;
       const viewerUserId = e.parameter.viewerUserId || '';
@@ -141,13 +141,13 @@ function doGet(e) {
     }
 
     return ContentService
-      .createTextOutput(JSON.stringify({success: false, error: 'Invalid request'}))
+      .createTextOutput(JSON.stringify({ success: false, error: 'Invalid request' }))
       .setMimeType(ContentService.MimeType.JSON);
 
   } catch (error) {
     Logger.log('Error in doGet: ' + error.toString());
     return ContentService
-      .createTextOutput(JSON.stringify({success: false, error: 'Server error'}))
+      .createTextOutput(JSON.stringify({ success: false, error: 'Server error' }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 }
@@ -160,6 +160,8 @@ function doPost(e) {
       return handleRegister(e.parameter);
     } else if (action === 'login') {
       return handleLogin(e.parameter);
+    } else if (action === 'googleLogin') {
+      return handleGoogleLogin(e.parameter);
     } else if (action === 'saveDiaryEntry') {
       return saveDiaryEntry(e.parameter);
     } else if (action === 'updateDiaryEntry') {
@@ -181,13 +183,13 @@ function doPost(e) {
     }
 
     return ContentService
-      .createTextOutput(JSON.stringify({success: false, error: 'Invalid request'}))
+      .createTextOutput(JSON.stringify({ success: false, error: 'Invalid request' }))
       .setMimeType(ContentService.MimeType.JSON);
 
   } catch (error) {
     Logger.log('Error in doPost: ' + error.toString());
     return ContentService
-      .createTextOutput(JSON.stringify({success: false, error: 'Server error'}))
+      .createTextOutput(JSON.stringify({ success: false, error: 'Server error' }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 }
@@ -255,7 +257,7 @@ function handleRegister(params) {
 
 function handleLogin(params) {
   try {
-    const identifier = params.identifier; 
+    const identifier = params.identifier;
     const password = params.password;
 
     if (!identifier || !password) {
@@ -274,7 +276,7 @@ function handleLogin(params) {
       const username = values[2];
       const storedPasswordHash = values[4];
       if (verifyPassword(password, storedPasswordHash)) {
-        try { usersSheet.getRange(row, 7).setValue(new Date()); } catch (e) {}
+        try { usersSheet.getRange(row, 7).setValue(new Date()); } catch (e) { }
         return createResponse(true, 'Login successful', { user: { id: userId, email: email, username: username } });
       } else {
         return createResponse(false, 'Invalid password');
@@ -286,6 +288,75 @@ function handleLogin(params) {
   } catch (error) {
     Logger.log('Error in handleLogin: ' + error.toString());
     return createResponse(false, 'Login failed');
+  }
+}
+
+function handleGoogleLogin(params) {
+  try {
+    const credential = params.credential;
+    if (!credential) return createResponse(false, 'No credential provided');
+
+    // Verify token with Google
+    const response = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + credential);
+    if (response.getResponseCode() !== 200) {
+      return createResponse(false, 'Invalid token');
+    }
+    const payload = JSON.parse(response.getContentText());
+
+    // Verify Audience
+    if (payload.aud !== '787988651964-gf258mnif89bu6g0jao2mpdsm72j96da.apps.googleusercontent.com') {
+      return createResponse(false, 'Invalid token audience');
+    }
+
+    const email = payload.email;
+    if (!email) return createResponse(false, 'Email not provided by Google');
+
+    // Check if user exists
+    const usersSheet = getOrCreateUsersSheet();
+    const idx = getUsersIndex();
+    const row = idx.emailToRow[email.toLowerCase()];
+
+    if (row) {
+      // Login existing user
+      const values = usersSheet.getRange(row, 1, 1, Math.max(8, usersSheet.getLastColumn())).getValues()[0];
+      const userId = values[0];
+      const username = values[2];
+      try { usersSheet.getRange(row, 7).setValue(new Date()); } catch (e) { }
+      return createResponse(true, 'Login successful', { user: { id: userId, email: email, username: username } });
+    } else {
+      // Register new user
+      const userId = generateUUID();
+      // Generate unique username
+      let baseName = email.split('@')[0].replace(/[^a-zA-Z0-9_-]/g, '');
+      if (baseName.length < 5) baseName = baseName + 'user';
+      if (baseName.length > 20) baseName = baseName.substring(0, 20);
+
+      let username = baseName;
+      let counter = 1;
+      while (idx.usernameToRow[username.toLowerCase()]) {
+        const suffix = String(counter);
+        username = baseName.substring(0, 20 - suffix.length) + suffix;
+        counter++;
+      }
+
+      const passwordHash = 'GOOGLE_OAUTH_USER'; // Sentinel
+      const timestamp = new Date();
+
+      usersSheet.appendRow([userId, email, username, 'GOOGLE_OAUTH', passwordHash, timestamp, timestamp]);
+      invalidateUsersIndex();
+
+      return createResponse(true, 'User registered via Google', {
+        user: {
+          id: userId,
+          email: email,
+          username: username
+        }
+      });
+    }
+
+  } catch (e) {
+    Logger.log('Error in handleGoogleLogin: ' + e.toString());
+    return createResponse(false, 'Google login failed: ' + e.message);
   }
 }
 
@@ -342,7 +413,7 @@ function saveDiaryEntry(params) {
       cacheRemove('pub:list:');
       cacheRemove('pub:list:' + String(userInfo.username || '').trim().toLowerCase() + ':');
       invalidateDiaryIndex(userId);
-    } catch (e) {}
+    } catch (e) { }
 
     return createResponse(true, 'Diary entry saved successfully', {
       entryId: entryId,
@@ -389,7 +460,7 @@ function updateDiaryEntry(params) {
         cacheRemove('pub:list:');
         cacheRemove('pub:list:' + String(existing[2] || '').trim().toLowerCase() + ':');
         // Index row stays same for same date; no need to invalidate date mapping
-      } catch (e) {}
+      } catch (e) { }
 
       return createResponse(true, 'Diary entry updated successfully', { date: date, title: title, privacy: privacy });
     }
@@ -424,7 +495,7 @@ function deleteDiaryEntry(params) {
         cacheRemove('pub:list:');
         cacheRemove('pub:list:' + String(existing[2] || '').trim().toLowerCase() + ':');
         invalidateDiaryIndex(userId);
-      } catch (e) {}
+      } catch (e) { }
       return createResponse(true, 'Diary entry deleted successfully');
     }
 
@@ -493,7 +564,7 @@ function updateDiaryEntryById(params) {
           cacheRemove('pub:entry:' + String(username || '').trim().toLowerCase() + ':' + date);
           cacheRemove('pub:list:');
           cacheRemove('pub:list:' + String(username || '').trim().toLowerCase() + ':');
-        } catch (e) {}
+        } catch (e) { }
         return createResponse(true, 'Diary entry updated successfully', { entryId: entryId, date: date, title: title, privacy: privacy });
       }
     }
@@ -523,7 +594,7 @@ function deleteDiaryEntryById(params) {
           cacheRemove('pub:entry:' + String(username || '').trim().toLowerCase() + ':' + date);
           cacheRemove('pub:list:');
           cacheRemove('pub:list:' + String(username || '').trim().toLowerCase() + ':');
-        } catch (e) {}
+        } catch (e) { }
         return createResponse(true, 'Entry deleted', { entryId: entryId, date: date });
       }
     }
@@ -644,7 +715,7 @@ function getUserDiaryEntries(userId, month, year) {
     for (let i = 1; i < data.length; i++) {
       if (data[i][1] === userId) {
         const entryDate = normalizeDateCell(data[i][3]);
-        
+
         // Filter by month/year if provided
         if (month && !entryDate.startsWith(month)) continue;
         if (year && !entryDate.startsWith(year)) continue;
@@ -708,13 +779,13 @@ function getPublicDiaryEntries(username, date, month, year, limit, maxContent, v
     for (let i = 1; i < data.length; i++) {
       const ownerId = data[i][1];
       const privacy = normalizePrivacy(data[i][6], null);
-      
+
       // Enforce access
       if (!canViewEntry(ownerId, viewerUserId || '', privacy, viewerEmail || '')) continue;
-      
+
       // Filter by username if provided
       if (reqUser && String(data[i][2] || '').trim().toLowerCase() !== reqUser) continue;
-      
+
       // Filter by date if provided
       const rowDate = normalizeDateCell(data[i][3]);
       if (date && rowDate !== date) continue;
@@ -831,7 +902,7 @@ function getOrCreateUsersSheet() {
           sheet.insertColumnAfter(6);
           sheet.getRange(1, 7).setValue('Last Seen');
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     return sheet;
@@ -874,7 +945,7 @@ function getOrCreateDiaryEntriesSheet() {
             colRange.setValues(values);
           }
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     return sheet;
@@ -955,12 +1026,12 @@ function diaryEntryExists(diarySheet, userId, date) {
 function isValidDate(dateString) {
   const regex = /^\d{4}-\d{2}-\d{2}$/;
   if (!regex.test(dateString)) return false;
-  
+
   const date = new Date(dateString);
   const timestamp = date.getTime();
-  
+
   if (typeof timestamp !== 'number' || Number.isNaN(timestamp)) return false;
-  
+
   return dateString === date.toISOString().split('T')[0];
 }
 
@@ -1133,7 +1204,7 @@ function ping(params) {
     const data = usersSheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
       if (data[i][0] === userId) {
-        try { usersSheet.getRange(i + 1, 7).setValue(new Date()); } catch (e) {}
+        try { usersSheet.getRange(i + 1, 7).setValue(new Date()); } catch (e) { }
         break;
       }
     }

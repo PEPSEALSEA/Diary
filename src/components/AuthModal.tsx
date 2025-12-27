@@ -1,10 +1,16 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import LoadingOverlay from './LoadingOverlay';
+
+declare global {
+    interface Window {
+        google: any;
+    }
+}
 
 interface AuthModalProps {
     onClose: () => void;
@@ -27,6 +33,54 @@ export default function AuthModal({ onClose, initialMode = 'login' }: AuthModalP
 
     const { setUser } = useAuth();
     const { toast } = useToast();
+
+    const handleGoogleResponse = async (response: any) => {
+        setLoading(true);
+        setLoadingMsg('Verifying with Google...');
+        try {
+            const res = await api.post({ action: 'googleLogin', credential: response.credential });
+            if (res.success && res.user) {
+                setUser(res.user);
+                toast('Logged in with Google!');
+                onClose();
+            } else {
+                toast(res.error || 'Google login failed', 'error');
+            }
+        } catch (e: any) {
+            toast(e.message || 'Google login failed', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        const script = document.createElement('script');
+        script.src = 'https://accounts.google.com/gsi/client';
+        script.async = true;
+        script.defer = true;
+        script.onload = () => {
+            if (window.google) {
+                window.google.accounts.id.initialize({
+                    client_id: '787988651964-gf258mnif89bu6g0jao2mpdsm72j96da.apps.googleusercontent.com',
+                    callback: handleGoogleResponse
+                });
+                window.google.accounts.id.renderButton(
+                    document.getElementById('googleSignInBtn'),
+                    { theme: 'outline', size: 'large', width: '380' } // width doesn't accept % strings in some versions, but we can try or use container width
+                );
+            }
+        };
+        document.body.appendChild(script);
+
+        return () => {
+            // cleanup if needed, though GSI is global
+            try {
+                if (document.body.contains(script)) {
+                    document.body.removeChild(script);
+                }
+            } catch (e) { }
+        };
+    }, []);
 
     const handleLogin = async () => {
         if (!identifier || !password) {
@@ -107,6 +161,9 @@ export default function AuthModal({ onClose, initialMode = 'login' }: AuthModalP
 
                 {mode === 'login' ? (
                     <div>
+                        <div id="googleSignInBtn" style={{ minHeight: 40, marginBottom: 16, width: '100%' }}></div>
+                        <div className="spacer" style={{ marginBottom: 16, borderBottom: '1px solid #ccc' }}></div>
+
                         <label>Username or Email</label>
                         <input
                             value={identifier}
