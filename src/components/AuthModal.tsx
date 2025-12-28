@@ -18,7 +18,7 @@ interface AuthModalProps {
 }
 
 export default function AuthModal({ onClose, initialMode = 'login' }: AuthModalProps) {
-    const [mode, setMode] = useState<'login' | 'register'>(initialMode);
+    const [mode, setMode] = useState<'login' | 'register' | 'google-setup'>(initialMode);
     // Separate states for clarity, though identifier handles both for login
     const [identifier, setIdentifier] = useState('');
     const [password, setPassword] = useState('');
@@ -27,6 +27,11 @@ export default function AuthModal({ onClose, initialMode = 'login' }: AuthModalP
     const [regEmail, setRegEmail] = useState('');
     const [regUsername, setRegUsername] = useState('');
     const [regPassword, setRegPassword] = useState('');
+
+    // Google Setup fields
+    const [googleEmail, setGoogleEmail] = useState('');
+    const [googleCredential, setGoogleCredential] = useState('');
+    const [googleUsername, setGoogleUsername] = useState('');
 
     const [loading, setLoading] = useState(false);
     const [loadingMsg, setLoadingMsg] = useState('');
@@ -43,6 +48,12 @@ export default function AuthModal({ onClose, initialMode = 'login' }: AuthModalP
                 setUser(res.user);
                 toast('Logged in with Google!');
                 onClose();
+            } else if (res.requireSetup) {
+                // New user flow
+                setGoogleEmail(res.email);
+                setGoogleCredential(res.credential);
+                setMode('google-setup');
+                setLoadingMsg('');
             } else {
                 toast(res.error || 'Google login failed', 'error');
             }
@@ -53,7 +64,41 @@ export default function AuthModal({ onClose, initialMode = 'login' }: AuthModalP
         }
     };
 
+    const handleGoogleRegister = async () => {
+        if (!googleUsername) {
+            toast('Please enter a display name', 'error');
+            return;
+        }
+        if (googleUsername.length < 5 || googleUsername.length > 20) {
+            toast('Username must be 5-20 characters', 'error');
+            return;
+        }
+
+        setLoading(true);
+        setLoadingMsg('Finalizing setup...');
+        try {
+            const res = await api.post({
+                action: 'googleRegister',
+                credential: googleCredential,
+                username: googleUsername
+            });
+
+            if (res.success && res.user) {
+                setUser(res.user);
+                toast('Welcome! Account created.');
+                onClose();
+            } else {
+                toast(res.error || 'Registration failed', 'error');
+            }
+        } catch (e: any) {
+            toast(e.message || 'Error', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     useEffect(() => {
+        // Only load GSI if not in google-setup mode (or maybe just keep it, doesn't hurt)
         const script = document.createElement('script');
         script.src = 'https://accounts.google.com/gsi/client';
         script.async = true;
@@ -64,23 +109,26 @@ export default function AuthModal({ onClose, initialMode = 'login' }: AuthModalP
                     client_id: '787988651964-gf258mnif89bu6g0jao2mpdsm72j96da.apps.googleusercontent.com',
                     callback: handleGoogleResponse
                 });
-                window.google.accounts.id.renderButton(
-                    document.getElementById('googleSignInBtn'),
-                    { theme: 'outline', size: 'large', width: '380' } // width doesn't accept % strings in some versions, but we can try or use container width
-                );
+                // Only render button if element exists
+                const btn = document.getElementById('googleSignInBtn');
+                if (btn) {
+                    window.google.accounts.id.renderButton(
+                        btn,
+                        { theme: 'outline', size: 'large', width: '380' }
+                    );
+                }
             }
         };
         document.body.appendChild(script);
 
         return () => {
-            // cleanup if needed, though GSI is global
             try {
                 if (document.body.contains(script)) {
                     document.body.removeChild(script);
                 }
             } catch (e) { }
         };
-    }, []);
+    }, [mode]); // Re-run if mode changes so button re-renders if going back
 
     const handleLogin = async () => {
         if (!identifier || !password) {
@@ -155,7 +203,9 @@ export default function AuthModal({ onClose, initialMode = 'login' }: AuthModalP
                 {loading && <LoadingOverlay message={loadingMsg} />}
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                    <div style={{ fontWeight: 600, fontSize: 18 }}>{mode === 'login' ? 'Login' : 'Register'}</div>
+                    <div style={{ fontWeight: 600, fontSize: 18 }}>
+                        {mode === 'login' ? 'Login' : mode === 'register' ? 'Register' : 'Finish Setup'}
+                    </div>
                     <button className="auth-close" onClick={onClose} disabled={loading}>Close</button>
                 </div>
 
@@ -190,7 +240,7 @@ export default function AuthModal({ onClose, initialMode = 'login' }: AuthModalP
                             No account? <a onClick={() => !loading && setMode('register')}>Register</a>
                         </div>
                     </div>
-                ) : (
+                ) : mode === 'register' ? (
                     <div>
                         <label>Email</label>
                         <input
@@ -223,6 +273,32 @@ export default function AuthModal({ onClose, initialMode = 'login' }: AuthModalP
                         <div className="spacer"></div>
                         <div className="auth-switch helper">
                             Have an account? <a onClick={() => !loading && setMode('login')}>Login</a>
+                        </div>
+                    </div>
+                ) : (
+                    // GOOGLE SETUP MODE
+                    <div>
+                        <div style={{ marginBottom: 16, fontSize: '0.9em', color: '#666' }}>
+                            You're almost there! Choose a display name to complete your profile for <b>{googleEmail}</b>.
+                        </div>
+                        <label>Display Name (Username)</label>
+                        <input
+                            value={googleUsername}
+                            onChange={e => setGoogleUsername(e.target.value)}
+                            placeholder="e.g. DiaryUser123"
+                            onKeyDown={e => e.key === 'Enter' && handleGoogleRegister()}
+                            disabled={loading}
+                        />
+                        <div className="spacer"></div>
+                        <button style={{ width: '100%' }} onClick={handleGoogleRegister} disabled={loading}>
+                            Complete Signup
+                        </button>
+                        <div className="spacer"></div>
+                        <div className="auth-switch helper">
+                            <a onClick={() => {
+                                setMode('login');
+                                setGoogleCredential('');
+                            }}>Back to Login</a>
                         </div>
                     </div>
                 )}
