@@ -1,23 +1,26 @@
 'use client';
 
-import React, { Suspense } from 'react';
-import { DiaryEntry, toDisplayDate, ApiResponse } from '@/lib/api';
+import React, { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import Header from '@/components/Header';
 import LoadingOverlay from '@/components/LoadingOverlay';
 import { useCachedQuery } from '@/hooks/useCachedQuery';
 import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
+import { api, FriendRequest, ApiResponse, toDisplayDate } from '@/lib/api';
 
-function ProfileContent() {
+const ProfileContent = () => {
     const params = useSearchParams();
     const username = params.get('u') || '';
     const { user: viewer } = useAuth();
+    const { toast } = useToast();
+    const [refresh, setRefresh] = useState(0);
 
     const { data: profileResp, loading: profileLoading } = useCachedQuery<ApiResponse>(
-        'profile-v2',
+        'profile-v4',
         { action: 'getProfile', username, viewerUserId: viewer?.id || '' },
-        { enabled: !!username }
+        { enabled: !!username, refreshTrigger: refresh }
     );
 
     const { data: entriesResp, loading: entriesLoading } = useCachedQuery<ApiResponse>(
@@ -26,8 +29,51 @@ function ProfileContent() {
         { enabled: !!username }
     );
 
+    const { data: requestsResp } = useCachedQuery<ApiResponse>(
+        'friend-requests',
+        { action: 'listFriendRequests', userId: viewer?.id || '' },
+        { enabled: !!viewer && viewer.username === username, refreshTrigger: refresh }
+    );
+
     const profile = profileResp?.profile;
     const entries = entriesResp?.entries || [];
+    const requests: FriendRequest[] = requestsResp?.requests || [];
+
+    const handleAddFriend = async () => {
+        if (!viewer) {
+            toast('Please login to add friends', 'error');
+            return;
+        }
+        const res = await api.addFriend(viewer.id, username);
+        if (res.success) {
+            toast(res.message || 'Request sent!');
+            setRefresh(prev => prev + 1);
+        } else {
+            toast(res.error || 'Failed to send request', 'error');
+        }
+    };
+
+    const handleAccept = async (requesterId: string) => {
+        if (!viewer) return;
+        const res = await api.acceptFriend(viewer.id, requesterId);
+        if (res.success) {
+            toast('Friend request accepted!');
+            setRefresh(prev => prev + 1);
+        } else {
+            toast(res.error || 'Failed to accept request', 'error');
+        }
+    };
+
+    const handleDecline = async (requesterId: string) => {
+        if (!viewer) return;
+        const res = await api.declineFriend(viewer.id, requesterId);
+        if (res.success) {
+            toast('Request declined');
+            setRefresh(prev => prev + 1);
+        } else {
+            toast(res.error || 'Failed to decline request', 'error');
+        }
+    };
 
     if (!username) return (
         <div className="container">
@@ -42,7 +88,7 @@ function ProfileContent() {
         return (
             <div className="container">
                 <Header />
-                <LoadingOverlay message="Loading steam profile..." />
+                <LoadingOverlay message="Loading profile..." />
             </div>
         );
     }
@@ -58,8 +104,12 @@ function ProfileContent() {
         );
     }
 
+    // Since we returned above if !profile, we can safely access profile fields now
+    // but Typescript might still complain if not explicitly narrowed.
     const lastSeenDate = profile?.lastSeen ? new Date(profile.lastSeen) : null;
     const isOnline = lastSeenDate && (new Date().getTime() - lastSeenDate.getTime() < 5 * 60 * 1000);
+    const isSelf = viewer?.id === profile?.id;
+    const isFriend = profile?.friends?.some(f => f.friendUserId === viewer?.id);
 
     return (
         <div className="container">
@@ -120,15 +170,26 @@ function ProfileContent() {
                 </div>
 
                 <div style={{ flex: 1, minWidth: 200 }}>
-                    <h1 style={{ margin: 0, fontSize: 32, fontWeight: 700, color: '#fff', textShadow: '0 0 5px rgba(0,0,0,0.5)' }}>{profile?.username}</h1>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
-                        <span style={{
-                            color: isOnline ? '#57cbde' : '#898989',
-                            fontSize: 14,
-                            fontWeight: 600
-                        }}>
-                            {isOnline ? 'Online' : profile?.lastSeen ? `Last Online: ${new Date(profile.lastSeen).toLocaleString()}` : 'Never active'}
-                        </span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                            <h1 style={{ margin: 0, fontSize: 32, fontWeight: 700, color: '#fff', textShadow: '0 0 5px rgba(0,0,0,0.5)' }}>{profile?.username}</h1>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
+                                <span style={{
+                                    color: isOnline ? '#57cbde' : '#898989',
+                                    fontSize: 14,
+                                    fontWeight: 600
+                                }}>
+                                    {isOnline ? 'Online' : profile?.lastSeen ? `Last Online: ${new Date(profile.lastSeen).toLocaleString()}` : 'Never active'}
+                                </span>
+                            </div>
+                        </div>
+
+                        {!isSelf && !isFriend && (
+                            <button className="button" onClick={handleAddFriend} style={{ padding: '8px 24px' }}>Add Friend</button>
+                        )}
+                        {isFriend && !isSelf && (
+                            <div style={{ padding: '6px 12px', background: 'rgba(255,255,255,0.1)', borderRadius: 4, fontSize: 13, color: '#898989' }}>✓ Friends</div>
+                        )}
                     </div>
                 </div>
 
@@ -150,8 +211,31 @@ function ProfileContent() {
             {/* Profile Body */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, marginTop: 2 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                    {/* Friend Requests (Only for self) */}
+                    {isSelf && requests.length > 0 && (
+                        <div className="card" style={{ borderTop: 'none', background: 'rgba(57, 203, 222, 0.1)', border: '1px solid rgba(57, 203, 222, 0.3)' }}>
+                            <h3 style={{ textTransform: 'uppercase', fontSize: 14, color: '#57cbde', marginTop: 0, borderBottom: '1px solid rgba(57, 203, 222, 0.2)', paddingBottom: 10 }}>
+                                Pending Friend Requests
+                            </h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                {requests.map((r, i) => (
+                                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                            <div style={{ width: 32, height: 32, borderRadius: 4, background: 'var(--accent)', display: 'grid', placeItems: 'center', fontWeight: 'bold' }}>{r.requesterUsername[0].toUpperCase()}</div>
+                                            <span style={{ fontWeight: 600 }}>{r.requesterUsername}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: 8 }}>
+                                            <button className="button" style={{ padding: '4px 12px', fontSize: 12 }} onClick={() => handleAccept(r.requesterId)}>Accept</button>
+                                            <button className="button danger" style={{ padding: '4px 12px', fontSize: 12 }} onClick={() => handleDecline(r.requesterId)}>Decline</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Last Diary Entry */}
-                    <div className="card" style={{ borderTop: 'none', background: 'rgba(23, 26, 33, 0.4)' }}>
+                    <div className="card" style={{ borderTop: isSelf && requests.length > 0 ? '' : 'none', background: 'rgba(23, 26, 33, 0.4)' }}>
                         <h3 style={{ textTransform: 'uppercase', fontSize: 14, color: '#898989', marginTop: 0, borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: 10 }}>
                             Pinned / Last Entry
                         </h3>

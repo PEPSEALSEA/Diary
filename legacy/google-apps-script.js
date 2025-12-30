@@ -142,6 +142,8 @@ function doGet(e) {
       const username = e.parameter.username;
       const viewerUserId = e.parameter.viewerUserId || '';
       return getProfile(username, viewerUserId);
+    } else if (action === 'listFriendRequests') {
+      return listFriendRequests(e.parameter.userId);
     }
 
     return ContentService
@@ -181,7 +183,11 @@ function doPost(e) {
     } else if (action === 'toggleDiaryPrivacy') {
       return toggleDiaryPrivacy(e.parameter);
     } else if (action === 'addFriend') {
-      return addFriend(e.parameter);
+      return sendFriendRequest(e.parameter);
+    } else if (action === 'acceptFriendRequest') {
+      return acceptFriendRequest(e.parameter);
+    } else if (action === 'declineFriendRequest') {
+      return declineFriendRequest(e.parameter);
     } else if (action === 'removeFriend') {
       return removeFriend(e.parameter);
     } else if (action === 'ping') {
@@ -1286,7 +1292,22 @@ function getOrCreateFriendsSheet() {
       sheet = spreadsheet.insertSheet(FRIENDS_SHEET_NAME);
     }
     if (sheet.getLastRow() === 0) {
-      sheet.appendRow(['Owner User ID', 'Friend User ID', 'Friend Email', 'Created Date']);
+      sheet.appendRow(['Requester ID', 'Recipient ID', 'Status', 'Created Date', 'Last Updated']);
+    } else {
+      // Migrate old 4-column structure to 5-column with status
+      const header = sheet.getRange(1, 1, 1, Math.max(4, sheet.getLastColumn())).getValues()[0];
+      if (header.length < 5 || header[2] !== 'Status') {
+        sheet.insertColumnAfter(2);
+        sheet.getRange(1, 3).setValue('Status');
+        sheet.getRange(1, 5).setValue('Last Updated');
+        const lastRow = sheet.getLastRow();
+        if (lastRow > 1) {
+          const statusRange = sheet.getRange(2, 3, lastRow - 1, 1);
+          const vals = [];
+          for (let i = 0; i < lastRow - 1; i++) vals.push(['accepted']);
+          statusRange.setValues(vals);
+        }
+      }
     }
     return sheet;
   } catch (e) {
@@ -1329,76 +1350,161 @@ function ping(params) {
   }
 }
 
-function addFriend(params) {
+function sendFriendRequest(params) {
   try {
-    const ownerId = params.ownerId;
-    const friendIdentifier = params.friendIdentifier; // email | username | userId
-    if (!ownerId || !friendIdentifier) {
-      return createResponse(false, 'ownerId and friendIdentifier are required');
-    }
-    const friendUserId = resolveUserIdByIdentifier(friendIdentifier);
-    const friendEmail = friendUserId ? '' : String(friendIdentifier).trim();
+    const fromId = params.fromId || params.ownerId;
+    const toIdentifier = params.toIdentifier || params.friendIdentifier;
+    if (!fromId || !toIdentifier) return createResponse(false, 'fromId and toIdentifier required');
+
+    const toId = resolveUserIdByIdentifier(toIdentifier);
+    if (!toId) return createResponse(false, 'User not found');
+    if (fromId === toId) return createResponse(false, 'Cannot add yourself');
+
     const sheet = getOrCreateFriendsSheet();
     const data = sheet.getDataRange().getValues();
+
     for (let i = 1; i < data.length; i++) {
-      if (data[i][0] === ownerId && (data[i][1] === friendUserId || data[i][2] === friendEmail)) {
-        return createResponse(true, 'Friend already added');
+      if ((data[i][0] === fromId && data[i][1] === toId) || (data[i][0] === toId && data[i][1] === fromId)) {
+        return createResponse(true, 'Request already exists or already friends', { status: data[i][2] });
       }
     }
-    sheet.appendRow([ownerId, friendUserId, friendEmail, new Date()]);
-    return createResponse(true, 'Friend added');
+
+    sheet.appendRow([fromId, toId, 'pending', new Date(), new Date()]);
+    return createResponse(true, 'Friend request sent');
   } catch (e) {
-    Logger.log('Error in addFriend: ' + e.toString());
-    return createResponse(false, 'Failed to add friend');
+    return createResponse(false, 'Failed to send request');
   }
 }
 
-function removeFriend(params) {
+function acceptFriendRequest(params) {
   try {
-    const ownerId = params.ownerId;
-    const friendIdentifier = params.friendIdentifier; // email | username | userId
-    if (!ownerId || !friendIdentifier) {
-      return createResponse(false, 'ownerId and friendIdentifier are required');
-    }
-    const friendUserId = resolveUserIdByIdentifier(friendIdentifier);
-    const friendEmail = friendUserId ? '' : String(friendIdentifier).trim();
+    const userId = params.userId;
+    const requesterId = params.requesterId;
+    if (!userId || !requesterId) return createResponse(false, 'userId and requesterId required');
+
     const sheet = getOrCreateFriendsSheet();
     const data = sheet.getDataRange().getValues();
+
     for (let i = 1; i < data.length; i++) {
-      if (data[i][0] === ownerId && (data[i][1] === friendUserId || data[i][2] === friendEmail)) {
+      if (data[i][0] === requesterId && data[i][1] === userId && data[i][2] === 'pending') {
+        sheet.getRange(i + 1, 3).setValue('accepted');
+        sheet.getRange(i + 1, 5).setValue(new Date());
+        return createResponse(true, 'Friend request accepted');
+      }
+    }
+    return createResponse(false, 'Request not found');
+  } catch (e) {
+    return createResponse(false, 'Failed to accept');
+  }
+}
+
+function declineFriendRequest(params) {
+  try {
+    const userId = params.userId;
+    const requesterId = params.requesterId;
+    const sheet = getOrCreateFriendsSheet();
+    const data = sheet.getDataRange().getValues();
+
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][0] === requesterId && data[i][1] === userId && data[i][2] === 'pending') {
         sheet.deleteRow(i + 1);
-        return createResponse(true, 'Friend removed');
+        return createResponse(true, 'Request declined');
       }
     }
-    return createResponse(true, 'No matching friend');
+    return createResponse(true, 'Request not found');
   } catch (e) {
-    Logger.log('Error in removeFriend: ' + e.toString());
-    return createResponse(false, 'Failed to remove friend');
+    return createResponse(false, 'Failed to decline');
   }
 }
 
-function listFriends(ownerId) {
+function listFriendRequests(userId) {
   try {
-    if (!ownerId) return createResponse(false, 'ownerId required');
+    if (!userId) return createResponse(false, 'userId required');
     const sheet = getOrCreateFriendsSheet();
     const data = sheet.getDataRange().getValues();
-    const usersSheet = getOrCreateUsersSheet();
-    const users = usersSheet.getDataRange().getValues();
-    const userIndex = new Map();
-    for (let i = 1; i < users.length; i++) { userIndex.set(users[i][0], { username: users[i][2], email: users[i][1], lastSeen: users[i][6] }); }
-    const friends = [];
+    const users = getAllUsersIndex();
+    const requests = [];
+
     for (let i = 1; i < data.length; i++) {
-      if (data[i][0] === ownerId) {
-        const fuid = data[i][1];
-        const info = fuid ? (userIndex.get(fuid) || {}) : {};
-        friends.push({ friendUserId: fuid, friendEmail: data[i][2], friendUsername: info.username || '', lastSeen: info.lastSeen || '', created: data[i][3] });
+      if (data[i][1] === userId && data[i][2] === 'pending') {
+        const reqInfo = users.get(data[i][0]) || {};
+        requests.push({
+          requesterId: data[i][0],
+          requesterUsername: reqInfo.username || 'Unknown',
+          requesterAvatar: reqInfo.avatarUrl || '',
+          created: data[i][3]
+        });
       }
     }
-    return createResponse(true, 'Friends listed', { friends: friends });
+    return createResponse(true, 'Requests listed', { requests });
+  } catch (e) {
+    return createResponse(false, 'Failed to list requests');
+  }
+}
+
+function listFriends(userId) {
+  try {
+    if (!userId) return createResponse(false, 'userId required');
+    const sheet = getOrCreateFriendsSheet();
+    const data = sheet.getDataRange().getValues();
+    const users = getAllUsersIndex();
+    const friends = [];
+
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][2] === 'accepted') {
+        let friendId = null;
+        if (data[i][0] === userId) friendId = data[i][1];
+        else if (data[i][1] === userId) friendId = data[i][0];
+
+        if (friendId) {
+          const info = users.get(friendId) || {};
+          friends.push({
+            friendUserId: friendId,
+            friendUsername: info.username || '',
+            avatarUrl: info.avatarUrl || '',
+            lastSeen: info.lastSeen || '',
+            created: data[i][3]
+          });
+        }
+      }
+    }
+    return createResponse(true, 'Friends listed', { friends });
   } catch (e) {
     Logger.log('Error in listFriends: ' + e.toString());
     return createResponse(false, 'Failed to list friends');
   }
+}
+
+function getAllUsersIndex() {
+  const usersSheet = getOrCreateUsersSheet();
+  const data = usersSheet.getDataRange().getValues();
+  const index = new Map();
+  for (let i = 1; i < data.length; i++) {
+    index.set(data[i][0], {
+      username: data[i][2],
+      avatarUrl: data[i][7] || '',
+      lastSeen: data[i][6] || ''
+    });
+  }
+  return index;
+}
+
+function removeFriend(params) {
+  try {
+    const userId = params.userId || params.ownerId;
+    const friendId = resolveUserIdByIdentifier(params.friendIdentifier || params.friendId);
+    if (!userId || !friendId) return createResponse(false, 'Ids missing');
+
+    const sheet = getOrCreateFriendsSheet();
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (((data[i][0] === userId && data[i][1] === friendId) || (data[i][0] === friendId && data[i][1] === userId)) && data[i][2] === 'accepted') {
+        sheet.deleteRow(i + 1);
+        return createResponse(true, 'Friend removed');
+      }
+    }
+    return createResponse(true, 'Not friends');
+  } catch (e) { return createResponse(false, 'Error'); }
 }
 
 // ===== PRIVACY HELPERS =====
@@ -1424,7 +1530,7 @@ function isFriend(ownerId, viewerUserId) {
   const sheet = getOrCreateFriendsSheet();
   const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === ownerId && data[i][1] === viewerUserId) return true;
+    if (((data[i][0] === ownerId && data[i][1] === viewerUserId) || (data[i][0] === viewerUserId && data[i][1] === ownerId)) && data[i][2] === 'accepted') return true;
   }
   return false;
 }

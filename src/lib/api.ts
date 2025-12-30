@@ -86,11 +86,25 @@ async function apiRequest<T = any>(
     }
 }
 
+export interface FriendRequest {
+    requesterId: string;
+    requesterUsername: string;
+    requesterAvatar: string;
+    created: string;
+}
+
 export const api = {
     get: (params: any) => apiRequest(API_URL, 'GET', params),
     post: (params: any) => apiRequest(API_URL, 'POST', params),
     otpGet: (params: any) => apiRequest(OTP_API_URL, 'GET', params),
     otpPost: (params: any) => apiRequest(OTP_API_URL, 'POST', params),
+
+    // Friend helpers
+    addFriend: (fromId: string, toIdentifier: string) => api.post({ action: 'addFriend', fromId, toIdentifier }),
+    acceptFriend: (userId: string, requesterId: string) => api.post({ action: 'acceptFriendRequest', userId, requesterId }),
+    declineFriend: (userId: string, requesterId: string) => api.post({ action: 'declineFriendRequest', userId, requesterId }),
+    listRequests: (userId: string) => api.get({ action: 'listFriendRequests', userId }),
+    removeFriend: (userId: string, friendId: string) => api.post({ action: 'removeFriend', userId, friendId }),
 };
 
 export const normalizePrivacy = (privacy?: string, isPrivate?: string | boolean): 'public' | 'friend' | 'private' => {
