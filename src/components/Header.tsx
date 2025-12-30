@@ -78,6 +78,9 @@ export default function Header() {
                                             <Link href={`/profile?u=${encodeURIComponent(user.username)}`} onClick={() => setShowUserMenu(false)} style={menuItemStyle}>
                                                 View Profile
                                             </Link>
+                                            <Link href="/friends" onClick={() => setShowUserMenu(false)} style={menuItemStyle}>
+                                                Friends
+                                            </Link>
                                             <Link href="/dashboard" onClick={() => setShowUserMenu(false)} style={menuItemStyle}>
                                                 My Dashboard
                                             </Link>

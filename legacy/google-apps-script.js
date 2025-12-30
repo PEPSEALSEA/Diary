@@ -144,6 +144,10 @@ function doGet(e) {
       return getProfile(username, viewerUserId);
     } else if (action === 'listFriendRequests') {
       return listFriendRequests(e.parameter.userId);
+    } else if (action === 'searchUsers') {
+      return searchUsers(e.parameter.query);
+    } else if (action === 'getFriendships') {
+      return getFriendships(e.parameter.userId);
     }
 
     return ContentService
@@ -1522,6 +1526,72 @@ function normalizePrivacy(privacyValue, legacyIsPrivate) {
   if (privacyValue === true) return 'private';
   if (privacyValue === false) return 'public';
   return 'public';
+}
+
+function searchUsers(query) {
+  try {
+    if (!query || query.length < 2) return createResponse(true, 'Query too short', { users: [] });
+    const sheet = getOrCreateUsersSheet();
+    const data = sheet.getDataRange().getValues();
+    const results = [];
+    const q = query.toLowerCase();
+
+    for (let i = 1; i < data.length; i++) {
+      const username = String(data[i][2]);
+      if (username.toLowerCase().indexOf(q) !== -1) {
+        results.push({
+          id: data[i][0],
+          username: username,
+          avatarUrl: data[i][7] || '',
+          level: calculateLevel(data[i][8] || 0)
+        });
+      }
+      if (results.length >= 10) break;
+    }
+    return createResponse(true, 'Search complete', { users: results });
+  } catch (e) {
+    return createResponse(false, 'Search failed');
+  }
+}
+
+function getFriendships(userId) {
+  try {
+    if (!userId) return createResponse(false, 'userId required');
+    const sheet = getOrCreateFriendsSheet();
+    const data = sheet.getDataRange().getValues();
+    const users = getAllUsersIndex();
+
+    const friendships = {
+      friends: [],
+      sent: [],
+      received: []
+    };
+
+    for (let i = 1; i < data.length; i++) {
+      const status = data[i][2];
+      if (data[i][0] === userId) {
+        if (status === 'accepted') friendships.friends.push(formatFriend(data[i][1], users, data[i][3]));
+        else if (status === 'pending') friendships.sent.push(formatFriend(data[i][1], users, data[i][3]));
+      } else if (data[i][1] === userId) {
+        if (status === 'accepted') friendships.friends.push(formatFriend(data[i][0], users, data[i][3]));
+        else if (status === 'pending') friendships.received.push(formatFriend(data[i][0], users, data[i][3]));
+      }
+    }
+    return createResponse(true, 'Friendships retrieved', { friendships });
+  } catch (e) {
+    return createResponse(false, 'Failed to get friendships');
+  }
+}
+
+function formatFriend(id, usersIndex, created) {
+  const info = usersIndex.get(id) || {};
+  return {
+    userId: id,
+    username: info.username || 'Unknown',
+    avatarUrl: info.avatarUrl || '',
+    lastSeen: info.lastSeen || '',
+    created: created
+  };
 }
 
 function isFriend(ownerId, viewerUserId) {

@@ -105,6 +105,8 @@ export const api = {
     declineFriend: (userId: string, requesterId: string) => api.post({ action: 'declineFriendRequest', userId, requesterId }),
     listRequests: (userId: string) => api.get({ action: 'listFriendRequests', userId }),
     removeFriend: (userId: string, friendId: string) => api.post({ action: 'removeFriend', userId, friendId }),
+    searchUsers: (query: string) => api.get({ action: 'searchUsers', query }),
+    getFriendships: (userId: string) => api.get({ action: 'getFriendships', userId }),
 };
 
 export const normalizePrivacy = (privacy?: string, isPrivate?: string | boolean): 'public' | 'friend' | 'private' => {
