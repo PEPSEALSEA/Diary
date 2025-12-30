@@ -6,7 +6,7 @@ import PublicFeed from '@/components/PublicFeed';
 
 export default function Home() {
   return (
-    <div className="container">
+    <div className="container page-fade">
       <Header />
       <PublicFeed />
       <div className="footer">Make By PEPSEALSEA ©2025</div>

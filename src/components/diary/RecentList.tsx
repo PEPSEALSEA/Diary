@@ -28,7 +28,7 @@ export default function RecentList({ user, refreshTrigger }: RecentListProps) {
     return (
         <div className="card" style={{ position: 'relative' }}>
             {loading && <LoadingOverlay message="Loading recent..." />}
-            {validating && !loading && <div style={{ position: 'absolute', top: 10, right: 10, fontSize: 10, opacity: 0.5 }}>Updating...</div>}
+            {validating && !loading && <div className="pulse" style={{ position: 'absolute', top: 10, right: 10, fontSize: 10, opacity: 0.5 }}>Updating...</div>}
 
             <h3>Recent entries</h3>
             <div className="pager">

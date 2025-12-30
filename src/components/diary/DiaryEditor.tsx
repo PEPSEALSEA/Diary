@@ -270,8 +270,14 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
             <div className="spacer"></div>
 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button onClick={handleSave} disabled={loading}>{entryId ? 'Update' : 'Save'}</button>
-                {entryId && <button className="danger" onClick={handleDelete} disabled={loading}>Delete</button>}
+                <button onClick={handleSave} disabled={loading}>
+                    {loading ? <div className="spinner" style={{ width: 14, height: 14, margin: 0 }}></div> : (entryId ? 'Update' : 'Save')}
+                </button>
+                {entryId && (
+                    <button className="danger" onClick={handleDelete} disabled={loading}>
+                        {loading ? <div className="spinner" style={{ width: 14, height: 14, margin: 0 }}></div> : 'Delete'}
+                    </button>
+                )}
             </div>
         </div>
     );

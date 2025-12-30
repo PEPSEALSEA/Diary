@@ -16,6 +16,7 @@ export default function FriendsPage() {
     const [friendships, setFriendships] = useState<any>(null);
     const [loading, setLoading] = useState(false);
     const [searching, setSearching] = useState(false);
+    const [actionLoading, setActionLoading] = useState(false);
 
     useEffect(() => {
         if (user) {
@@ -46,6 +47,7 @@ export default function FriendsPage() {
 
     const handleSendRequest = async (toUsername: string) => {
         if (!user) return;
+        setActionLoading(true);
         const res = await api.addFriend(user.id, toUsername);
         if (res.success) {
             toast('Friend request sent!');
@@ -53,15 +55,20 @@ export default function FriendsPage() {
         } else {
             toast(res.error || 'Failed to send request', 'error');
         }
+        setActionLoading(false);
     };
 
     const handleAccept = async (requesterId: string) => {
         if (!user) return;
+        setActionLoading(true);
         const res = await api.acceptFriend(user.id, requesterId);
         if (res.success) {
             toast('Accepted!');
             fetchFriendships();
+        } else {
+            toast(res.error || 'Failed to accept', 'error');
         }
+        setActionLoading(false);
     };
 
     if (!user) {
@@ -76,7 +83,7 @@ export default function FriendsPage() {
     }
 
     return (
-        <div className="container">
+        <div className="container page-fade">
             <Header />
 
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 350px', gap: 24, marginTop: 24 }}>
@@ -109,7 +116,9 @@ export default function FriendsPage() {
                                             </div>
                                         </div>
                                         {u.id !== user.id && (
-                                            <button className="button" style={{ padding: '6px 12px', fontSize: 13 }} onClick={() => handleSendRequest(u.username)}>Add Friend</button>
+                                            <button className="button" style={{ padding: '6px 12px', fontSize: 13 }} onClick={() => handleSendRequest(u.username)} disabled={actionLoading}>
+                                                {actionLoading ? '...' : 'Add Friend'}
+                                            </button>
                                         )}
                                     </div>
                                 ))}
@@ -122,7 +131,7 @@ export default function FriendsPage() {
 
                     <div className="card">
                         <h2 style={{ marginTop: 0 }}>Your Friends</h2>
-                        {loading && <div className="helper">Loading friends...</div>}
+                        {loading && <div className="helper pulse">Loading friends...</div>}
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16 }}>
                             {friendships?.friends.map((f: any, i: number) => (
                                 <Link key={i} href={`/profile?u=${f.username}`} style={{ textDecoration: 'none' }}>
@@ -150,7 +159,9 @@ export default function FriendsPage() {
                             {friendships?.received.map((r: any, i: number) => (
                                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: 600 }}>{r.username}</span>
-                                    <button className="button" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => handleAccept(r.userId)}>Accept</button>
+                                    <button className="button" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => handleAccept(r.userId)} disabled={actionLoading}>
+                                        {actionLoading ? '...' : 'Accept'}
+                                    </button>
                                 </div>
                             ))}
                             {friendships?.received.length === 0 && <div className="helper">No pending requests.</div>}

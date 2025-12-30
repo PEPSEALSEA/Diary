@@ -11,7 +11,7 @@ export default function DashboardPage() {
 
     if (loading) {
         return (
-            <div className="container">
+            <div className="container page-fade">
                 <Header />
                 <div style={{ minHeight: '60vh', display: 'grid', placeItems: 'center', color: 'var(--muted)' }}>
                     Loading...
@@ -23,7 +23,7 @@ export default function DashboardPage() {
 
     if (!user) {
         return (
-            <div className="container">
+            <div className="container page-fade">
                 <Header />
                 <div className="card" style={{ textAlign: 'center', margin: '40px auto', maxWidth: 400 }}>
                     <h3>Access Denied</h3>

@@ -19,7 +19,7 @@ export default function Dashboard() {
     };
 
     return (
-        <div className="container">
+        <div className="container page-fade">
             <Header />
 
             <div className="row">

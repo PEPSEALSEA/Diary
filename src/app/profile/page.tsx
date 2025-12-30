@@ -16,6 +16,8 @@ const ProfileContent = () => {
     const { user: viewer } = useAuth();
     const { toast } = useToast();
     const [refresh, setRefresh] = useState(0);
+    const [actionLoading, setActionLoading] = useState(false);
+    const [showStats, setShowStats] = useState(false);
 
     const { data: profileResp, loading: profileLoading } = useCachedQuery<ApiResponse>(
         'profile-v4',
@@ -44,6 +46,7 @@ const ProfileContent = () => {
             toast('Please login to add friends', 'error');
             return;
         }
+        setActionLoading(true);
         const res = await api.addFriend(viewer.id, username);
         if (res.success) {
             toast(res.message || 'Request sent!');
@@ -51,10 +54,12 @@ const ProfileContent = () => {
         } else {
             toast(res.error || 'Failed to send request', 'error');
         }
+        setActionLoading(false);
     };
 
     const handleAccept = async (requesterId: string) => {
         if (!viewer) return;
+        setActionLoading(true);
         const res = await api.acceptFriend(viewer.id, requesterId);
         if (res.success) {
             toast('Friend request accepted!');
@@ -62,10 +67,12 @@ const ProfileContent = () => {
         } else {
             toast(res.error || 'Failed to accept request', 'error');
         }
+        setActionLoading(false);
     };
 
     const handleDecline = async (requesterId: string) => {
         if (!viewer) return;
+        setActionLoading(true);
         const res = await api.declineFriend(viewer.id, requesterId);
         if (res.success) {
             toast('Request declined');
@@ -73,6 +80,7 @@ const ProfileContent = () => {
         } else {
             toast(res.error || 'Failed to decline request', 'error');
         }
+        setActionLoading(false);
     };
 
     if (!username) return (
@@ -109,10 +117,10 @@ const ProfileContent = () => {
     const lastSeenDate = profile?.lastSeen ? new Date(profile.lastSeen) : null;
     const isOnline = lastSeenDate && (new Date().getTime() - lastSeenDate.getTime() < 5 * 60 * 1000);
     const isSelf = viewer?.id === profile?.id;
-    const isFriend = profile?.friends?.some(f => f.friendUserId === viewer?.id);
+    const isFriend = profile?.isFriend || profile?.friends?.some(f => f.friendUserId === viewer?.id);
 
     return (
-        <div className="container">
+        <div className="container page-fade">
             <Header />
 
             {/* Profile Header (Steam Style) */}
@@ -185,10 +193,12 @@ const ProfileContent = () => {
                         </div>
 
                         {!isSelf && !isFriend && (
-                            <button className="button" onClick={handleAddFriend} style={{ padding: '8px 24px' }}>Add Friend</button>
+                            <button className="button" onClick={handleAddFriend} disabled={actionLoading} style={{ padding: '8px 24px' }}>
+                                {actionLoading ? <div className="spinner" style={{ width: 14, height: 14, margin: 0 }}></div> : 'Add Friend'}
+                            </button>
                         )}
                         {isFriend && !isSelf && (
-                            <div style={{ padding: '6px 12px', background: 'rgba(255,255,255,0.1)', borderRadius: 4, fontSize: 13, color: '#898989' }}>✓ Friends</div>
+                            <div style={{ padding: '6px 12px', background: 'rgba(57, 203, 222, 0.1)', border: '1px solid rgba(57, 203, 222, 0.3)', borderRadius: 4, fontSize: 13, color: '#57cbde', fontWeight: 600 }}>✓ Friends</div>
                         )}
                     </div>
                 </div>
@@ -200,13 +210,53 @@ const ProfileContent = () => {
                         borderRadius: 4,
                         border: '1px solid rgba(255,255,255,0.1)',
                         textAlign: 'right',
-                        minWidth: 100
-                    }}>
+                        minWidth: 100,
+                        cursor: 'pointer'
+                    }} onClick={() => setShowStats(true)}>
                         <div style={{ fontSize: 24, fontWeight: 700, color: '#fff' }}>Level <span style={{ color: 'var(--accent)' }}>{profile?.level}</span></div>
                         <div style={{ fontSize: 12, opacity: 0.6 }}>XP: {profile?.exp}</div>
+                        <div style={{ fontSize: 10, color: 'var(--accent)', marginTop: 4, fontWeight: 700, textTransform: 'uppercase' }}>View Stats</div>
                     </div>
                 </div>
             </div>
+
+            {/* Stats Modal */}
+            {showStats && (
+                <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && setShowStats(false)}>
+                    <div className="modal-content" style={{ textAlign: 'center' }}>
+                        <h2 style={{ marginTop: 0 }}>User Stats</h2>
+                        <div style={{ fontSize: 48, fontWeight: 800, color: 'var(--accent)', margin: '10px 0' }}>{profile?.level}</div>
+                        <div style={{ fontSize: 14, opacity: 0.7, marginBottom: 20 }}>Current Level</div>
+
+                        <div style={{ background: 'rgba(0,0,0,0.2)', padding: 15, borderRadius: 8, marginBottom: 15 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                                <span>Experience</span>
+                                <span style={{ fontWeight: 700 }}>{profile?.exp} XP</span>
+                            </div>
+                            <div style={{ height: 6, background: 'rgba(255,255,255,0.1)', borderRadius: 3, overflow: 'hidden' }}>
+                                <div style={{ height: '100%', width: `${(profile?.exp || 0) % 100}%`, background: 'var(--accent)' }}></div>
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                            <div className="card" style={{ padding: 10, background: 'rgba(255,255,255,0.03)' }}>
+                                <div style={{ fontSize: 18, fontWeight: 700 }}>{profile?.totalEntries}</div>
+                                <div style={{ fontSize: 11, opacity: 0.5 }}>Total Diary</div>
+                            </div>
+                            <div className="card" style={{ padding: 10, background: 'rgba(255,255,255,0.03)' }}>
+                                <div style={{ fontSize: 18, fontWeight: 700 }}>{profile?.friends?.length || 0}</div>
+                                <div style={{ fontSize: 11, opacity: 0.5 }}>Friends</div>
+                            </div>
+                        </div>
+
+                        <div style={{ marginTop: 20, fontSize: 12, opacity: 0.5 }}>
+                            Member since {profile?.created ? new Date(profile.created).toLocaleDateString() : 'Unknown'}
+                        </div>
+
+                        <button className="button ghost" onClick={() => setShowStats(false)} style={{ width: '100%', marginTop: 20 }}>Close</button>
+                    </div>
+                </div>
+            )}
 
             {/* Profile Body */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, marginTop: 2 }}>
@@ -225,8 +275,12 @@ const ProfileContent = () => {
                                             <span style={{ fontWeight: 600 }}>{r.requesterUsername}</span>
                                         </div>
                                         <div style={{ display: 'flex', gap: 8 }}>
-                                            <button className="button" style={{ padding: '4px 12px', fontSize: 12 }} onClick={() => handleAccept(r.requesterId)}>Accept</button>
-                                            <button className="button danger" style={{ padding: '4px 12px', fontSize: 12 }} onClick={() => handleDecline(r.requesterId)}>Decline</button>
+                                            <button className="button" style={{ padding: '4px 12px', fontSize: 12 }} onClick={() => handleAccept(r.requesterId)} disabled={actionLoading}>
+                                                {actionLoading ? '...' : 'Accept'}
+                                            </button>
+                                            <button className="button danger" style={{ padding: '4px 12px', fontSize: 12 }} onClick={() => handleDecline(r.requesterId)} disabled={actionLoading}>
+                                                {actionLoading ? '...' : 'Decline'}
+                                            </button>
                                         </div>
                                     </div>
                                 ))}

@@ -31,6 +31,7 @@ export interface ProfileData {
         created: string;
     } | null;
     friends: Friend[];
+    isFriend?: boolean;
 }
 
 export interface DiaryEntry {
