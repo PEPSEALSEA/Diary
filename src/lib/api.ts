@@ -2,6 +2,35 @@ export interface User {
     id: string;
     email: string;
     username: string;
+    avatarUrl?: string;
+    level?: number;
+    exp?: number;
+    lastSeen?: string;
+}
+
+export interface Friend {
+    friendUserId: string;
+    friendEmail: string;
+    friendUsername: string;
+    lastSeen: string;
+    created: string;
+}
+
+export interface ProfileData {
+    id: string;
+    username: string;
+    avatarUrl: string;
+    level: number;
+    exp: number;
+    lastSeen: string;
+    created: string;
+    totalEntries: number;
+    lastEntry: {
+        title: string;
+        date: string;
+        created: string;
+    } | null;
+    friends: Friend[];
 }
 
 export interface DiaryEntry {
@@ -24,6 +53,8 @@ export interface ApiResponse<T = any> {
     user?: User;
     entries?: DiaryEntry[];
     entry?: DiaryEntry;
+    profile?: ProfileData;
+    friends?: Friend[];
     total?: number;
     [key: string]: any;
 }

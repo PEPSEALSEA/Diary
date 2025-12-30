@@ -126,7 +126,7 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
             }
 
             if (res && res.success) {
-                toast('Saved');
+                toast(entryId ? 'Updated' : 'Saved! +10 XP Gained! ✨');
                 // Manually update the local cache/state if possible, or just let onEntryChange trigger a refresh elsewhere?
                 // For now, simple re-fetch or optimistically update would be ideal but user asked for "fetch all" capability.
                 // We should probably force a refresh of the 'user_entries_all' query.

@@ -15,15 +15,28 @@ export default function Header() {
                 <div className="brand">
                     <Link href="/" style={{ textDecoration: 'none', color: 'inherit' }}>Daily Diary</Link>
                 </div>
-                <div className="nav">
+                <div className="nav" style={{ display: 'flex', alignItems: 'center' }}>
                     <Link href="/">Home</Link>
                     {user && <Link href="/dashboard">My Diary</Link>}
 
                     {user ? (
-                        <>
-                            <span className="helper" style={{ marginLeft: 16 }}>{user.username}</span>
-                            <a style={{ cursor: 'pointer', marginLeft: 16 }} onClick={logout}>Logout</a>
-                        </>
+                        <div style={{ display: 'flex', alignItems: 'center', marginLeft: 16, gap: 12 }}>
+                            {user.avatarUrl ? (
+                                <img
+                                    src={user.avatarUrl}
+                                    alt={user.username}
+                                    style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--accent)' }}
+                                />
+                            ) : (
+                                <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--accent)', display: 'grid', placeItems: 'center', fontWeight: 'bold', fontSize: 14 }}>
+                                    {user.username[0].toUpperCase()}
+                                </div>
+                            )}
+                            <Link href={`/profile?u=${encodeURIComponent(user.username)}`} style={{ fontWeight: 600, color: 'var(--accent-2)' }}>
+                                {user.username}
+                            </Link>
+                            <a style={{ cursor: 'pointer', fontSize: '0.9em', opacity: 0.7 }} onClick={logout}>Logout</a>
+                        </div>
                     ) : (
                         <a style={{ cursor: 'pointer', marginLeft: 16 }} onClick={() => setShowAuth(true)}>Login</a>
                     )}

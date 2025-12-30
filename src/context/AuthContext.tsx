@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { storage } from '@/lib/storage';
-import { User } from '@/lib/api';
+import { User, api } from '@/lib/api';
 
 interface AuthContextType {
     user: User | null;
@@ -35,6 +35,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (u) storage.set('diary_user', u);
         else storage.del('diary_user');
     };
+
+    useEffect(() => {
+        if (!user) return;
+        // Initial ping
+        api.post({ action: 'ping', userId: user.id });
+
+        const interval = setInterval(() => {
+            api.post({ action: 'ping', userId: user.id });
+        }, 4 * 60 * 1000); // every 4 minutes
+
+        return () => clearInterval(interval);
+    }, [user]);
 
     const logout = () => {
         setUser(null);

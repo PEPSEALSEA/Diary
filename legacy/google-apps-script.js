@@ -138,6 +138,10 @@ function doGet(e) {
     } else if (action === 'getEmailByUsername') {
       const username = e.parameter.username;
       return getEmailByUsername(username);
+    } else if (action === 'getProfile') {
+      const username = e.parameter.username;
+      const viewerUserId = e.parameter.viewerUserId || '';
+      return getProfile(username, viewerUserId);
     }
 
     return ContentService
@@ -247,7 +251,10 @@ function handleRegister(params) {
       user: {
         id: userId,
         email: email,
-        username: username
+        username: username,
+        level: 1,
+        exp: 0,
+        avatarUrl: ''
       }
     });
 
@@ -279,7 +286,18 @@ function handleLogin(params) {
       const storedPasswordHash = values[4];
       if (verifyPassword(password, storedPasswordHash)) {
         try { usersSheet.getRange(row, 7).setValue(new Date()); } catch (e) { }
-        return createResponse(true, 'Login successful', { user: { id: userId, email: email, username: username } });
+        const level = calculateLevel(values[8] || 0);
+        return createResponse(true, 'Login successful', {
+          user: {
+            id: userId,
+            email: email,
+            username: username,
+            avatarUrl: values[7] || '',
+            exp: values[8] || 0,
+            level: level,
+            lastSeen: values[6]
+          }
+        });
       } else {
         return createResponse(false, 'Invalid password');
       }
@@ -326,7 +344,26 @@ function handleGoogleLogin(params) {
       const userId = values[0];
       const username = values[2];
       try { usersSheet.getRange(row, 7).setValue(new Date()); } catch (e) { }
-      return createResponse(true, 'Login successful', { user: { id: userId, email: email, username: username } });
+
+      // Update avatar if provided by Google and different
+      const googleAvatar = payload.picture || '';
+      if (googleAvatar && values[7] !== googleAvatar) {
+        try { usersSheet.getRange(row, 8).setValue(googleAvatar); } catch (e) { }
+        values[7] = googleAvatar;
+      }
+
+      const level = calculateLevel(values[8] || 0);
+      return createResponse(true, 'Login successful', {
+        user: {
+          id: userId,
+          email: email,
+          username: username,
+          avatarUrl: values[7] || '',
+          exp: values[8] || 0,
+          level: level,
+          lastSeen: values[6]
+        }
+      });
     } else {
       // USER DOES NOT EXIST -> Require Setup
       return createResponse(false, 'User not found', {
@@ -358,6 +395,7 @@ function handleGoogleRegister(params) {
     }
     const payload = JSON.parse(response.getContentText());
     const email = payload.email;
+    const avatarUrl = payload.picture || '';
 
     if (!email) return createResponse(false, 'Email not found in token');
 
@@ -387,14 +425,17 @@ function handleGoogleRegister(params) {
     const passwordHash = 'GOOGLE_OAUTH_USER'; // Sentinel
     const timestamp = new Date();
 
-    usersSheet.appendRow([userId, email, username, 'GOOGLE_OAUTH', passwordHash, timestamp, timestamp]);
+    usersSheet.appendRow([userId, email, username, 'GOOGLE_OAUTH', passwordHash, timestamp, timestamp, avatarUrl, 0]);
     invalidateUsersIndex();
 
     return createResponse(true, 'User registered via Google', {
       user: {
         id: userId,
         email: email,
-        username: username
+        username: username,
+        level: 1,
+        exp: 0,
+        avatarUrl: avatarUrl
       }
     });
 
@@ -457,6 +498,11 @@ function saveDiaryEntry(params) {
       cacheRemove('pub:list:');
       cacheRemove('pub:list:' + String(userInfo.username || '').trim().toLowerCase() + ':');
       invalidateDiaryIndex(userId);
+    } catch (e) { }
+
+    // Grant XP for saving (e.g., 10 XP)
+    try {
+      grantXP(userId, 10);
     } catch (e) { }
 
     return createResponse(true, 'Diary entry saved successfully', {
@@ -946,6 +992,12 @@ function getOrCreateUsersSheet() {
           sheet.insertColumnAfter(6);
           sheet.getRange(1, 7).setValue('Last Seen');
         }
+        if (header.indexOf('Avatar URL') === -1) {
+          sheet.getRange(1, 8).setValue('Avatar URL');
+        }
+        if (header.indexOf('Experience') === -1) {
+          sheet.getRange(1, 9).setValue('Experience');
+        }
       } catch (e) { }
     }
 
@@ -1005,8 +1057,17 @@ function getUserById(userId) {
     const idx = getUsersIndex();
     const row = idx.idToRow[userId];
     if (!row) return null;
-    const v = usersSheet.getRange(row, 1, 1, Math.max(6, usersSheet.getLastColumn())).getValues()[0];
-    return { id: v[0], email: v[1], username: v[2], created: v[5] };
+    const v = usersSheet.getRange(row, 1, 1, Math.max(9, usersSheet.getLastColumn())).getValues()[0];
+    return {
+      id: v[0],
+      email: v[1],
+      username: v[2],
+      created: v[5],
+      lastSeen: v[6],
+      avatarUrl: v[7] || '',
+      exp: v[8] || 0,
+      level: calculateLevel(v[8] || 0)
+    };
   } catch (error) {
     Logger.log('Error in getUserById: ' + error.toString());
     return null;
@@ -1019,8 +1080,17 @@ function getUserByUsername(username) {
     const idx = getUsersIndex();
     const row = idx.usernameToRow[String(username || '').trim().toLowerCase()];
     if (!row) return null;
-    const v = usersSheet.getRange(row, 1, 1, Math.max(6, usersSheet.getLastColumn())).getValues()[0];
-    return { id: v[0], email: v[1], username: v[2], created: v[5] };
+    const v = usersSheet.getRange(row, 1, 1, Math.max(9, usersSheet.getLastColumn())).getValues()[0];
+    return {
+      id: v[0],
+      email: v[1],
+      username: v[2],
+      created: v[5],
+      lastSeen: v[6],
+      avatarUrl: v[7] || '',
+      exp: v[8] || 0,
+      level: calculateLevel(v[8] || 0)
+    };
   } catch (error) {
     Logger.log('Error in getUserByUsername: ' + error.toString());
     return null;
@@ -1412,5 +1482,78 @@ function getAllDiaryEntries() {
   } catch (error) {
     Logger.log('Error getting diary entries: ' + error.toString());
     return [];
+  }
+}
+
+function calculateLevel(exp) {
+  if (!exp) return 1;
+  // Level = Floor(sqrt(xp/10)) + 1
+  return Math.floor(Math.sqrt(exp / 10)) + 1;
+}
+
+function grantXP(userId, amount) {
+  try {
+    const usersSheet = getOrCreateUsersSheet();
+    const idx = getUsersIndex();
+    const row = idx.idToRow[userId];
+    if (!row) return;
+
+    const currentExp = usersSheet.getRange(row, 9).getValue() || 0;
+    usersSheet.getRange(row, 9).setValue(currentExp + amount);
+  } catch (e) { }
+}
+
+function getProfile(username, viewerUserId) {
+  try {
+    const user = getUserByUsername(username);
+    if (!user) return createResponse(false, 'User not found');
+
+    // Get Friends
+    let friends = [];
+    try {
+      const friendsResponse = listFriends(user.id);
+      friends = friendsResponse.success ? friendsResponse.friends : [];
+    } catch (e) { }
+
+    // Get Diary Stats
+    const diarySheet = getOrCreateDiaryEntriesSheet();
+    const data = diarySheet.getDataRange().getValues();
+    let totalEntries = 0;
+    let lastEntry = null;
+
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][1] === user.id) {
+        totalEntries++;
+        const privacy = normalizePrivacy(data[i][6], null);
+        if (canViewEntry(user.id, viewerUserId, privacy, '')) {
+          const entryDate = data[i][7] || data[i][3];
+          if (!lastEntry || new Date(entryDate) > new Date(lastEntry.created)) {
+            lastEntry = {
+              title: data[i][4],
+              date: normalizeDateCell(data[i][3]),
+              created: data[i][7]
+            };
+          }
+        }
+      }
+    }
+
+    return createResponse(true, 'Profile retrieved', {
+      profile: {
+        id: user.id,
+        username: user.username,
+        avatarUrl: user.avatarUrl,
+        level: user.level,
+        exp: user.exp,
+        lastSeen: user.lastSeen,
+        created: user.created,
+        totalEntries: totalEntries,
+        lastEntry: lastEntry,
+        friends: friends
+      }
+    });
+  } catch (e) {
+    Logger.log('Error in getProfile: ' + e.toString());
+    return createResponse(false, 'Error retrieving profile');
   }
 }
