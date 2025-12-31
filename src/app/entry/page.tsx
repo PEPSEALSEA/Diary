@@ -15,7 +15,9 @@ function EntryContent() {
 
     const { user } = useAuth();
     const [entry, setEntry] = useState<DiaryEntry | null>(null);
+    const [pictures, setPictures] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+
     const [error, setError] = useState('');
 
     useEffect(() => {
@@ -41,7 +43,12 @@ function EntryContent() {
             const res = await api.get(payload);
             if (res.success && res.entry) {
                 setEntry(res.entry);
+                if (res.entry.entryId) {
+                    const picsRes = await api.getEntryPictures(res.entry.entryId);
+                    if (picsRes.success) setPictures(picsRes.pictures || []);
+                }
             } else {
+
                 setError(res.error || 'Entry not found or private');
             }
         } catch (e: any) {
@@ -75,7 +82,18 @@ function EntryContent() {
                         <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, fontSize: 16 }}>
                             {entry.content}
                         </div>
+
+                        {pictures.length > 0 && (
+                            <div style={{ marginTop: 24, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16 }}>
+                                {pictures.map(p => (
+                                    <a key={p.pictureId} href={p.url} target="_blank" rel="noopener noreferrer" className="card" style={{ padding: 4, height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                                        <img src={p.url} alt="Diary entry" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'cover' }} />
+                                    </a>
+                                ))}
+                            </div>
+                        )}
                     </div>
+
                 ) : null}
 
                 <div style={{ marginTop: 24, textAlign: 'center' }}>

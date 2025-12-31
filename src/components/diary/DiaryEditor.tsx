@@ -21,6 +21,9 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
     const [content, setContent] = useState('');
     const [privacy, setPrivacy] = useState<'public' | 'friend' | 'private'>('public');
     const [entryId, setEntryId] = useState<string | null>(null);
+    const [pictures, setPictures] = useState<any[]>([]);
+    const [uploading, setUploading] = useState(false);
+
 
     const [loading, setLoading] = useState(false);
     const [isDirty, setIsDirty] = useState(false);
@@ -75,16 +78,29 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
             date: entry.date
         };
         setIsDirty(false);
+        loadPictures(entry.entryId!);
     };
+
+    const loadPictures = async (id: string) => {
+        try {
+            const res = await api.getEntryPictures(id);
+            if (res.success) setPictures(res.pictures || []);
+        } catch (e) {
+            console.error('Failed to load pictures', e);
+        }
+    };
+
 
     const clearForm = () => {
         setTitle('');
         setContent('');
         setPrivacy('public');
         setEntryId(null);
+        setPictures([]);
         lastSavedDiff.current = { title: '', content: '', privacy: 'public', date };
         setIsDirty(false);
     };
+
 
     const handleEntrySelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const id = e.target.value;
@@ -224,6 +240,82 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
         }
     };
 
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = e.target.files;
+        if (!files || files.length === 0) return;
+
+        // We need an entryId to link pictures. If it doesn't exist, we must save first.
+        let currentEntryId = entryId;
+        if (!currentEntryId) {
+            setLoading(true);
+            try {
+                const res = await api.post({
+                    action: 'saveDiaryEntry',
+                    userId: user.id,
+                    title: title || '(Untitled with Pictures)',
+                    content: content || '...',
+                    privacy,
+                    date
+                });
+                if (res.success && res.entryId) {
+                    currentEntryId = res.entryId;
+                    setEntryId(currentEntryId);
+                    onEntryChange();
+                } else {
+                    toast('Failed to create entry for pictures', 'error');
+                    setLoading(false);
+                    return;
+                }
+            } catch (err) {
+                toast('Error creating entry', 'error');
+                setLoading(false);
+                return;
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        setUploading(true);
+        const fileArray = Array.from(files);
+        let successCount = 0;
+
+        for (const file of fileArray) {
+            try {
+                const uploadRes = await api.uploadPicture(file);
+                if (uploadRes.success && uploadRes.driveId) {
+                    await api.addPictureMetadata(user.id, currentEntryId!, uploadRes.driveId, uploadRes.url);
+                    successCount++;
+                }
+            } catch (err) {
+                console.error('Upload failed for', file.name, err);
+            }
+        }
+
+        if (successCount > 0) {
+            toast(`Uploaded ${successCount} pictures`);
+            loadPictures(currentEntryId!);
+        } else {
+            toast('Failed to upload pictures', 'error');
+        }
+        setUploading(false);
+        // Reset input
+        e.target.value = '';
+    };
+
+    const handleDeletePicture = async (pictureId: string) => {
+        if (!confirm('Delete this picture?')) return;
+        try {
+            const res = await api.deletePicture(pictureId, user.id);
+            if (res.success) {
+                toast('Picture deleted');
+                setPictures(prev => prev.filter(p => p.pictureId !== pictureId));
+            }
+        } catch (e) {
+            toast('Failed to delete picture', 'error');
+        }
+    };
+
+
     return (
         <div className="card" style={{ position: 'relative' }}>
             {(loading || (loadingEntries && allEntries.length === 0)) && <LoadingOverlay message={loading ? "Working..." : "Loading diary..."} />}
@@ -268,6 +360,38 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
                 <option value="private">Private (only you)</option>
             </select>
             <div className="spacer"></div>
+
+            <label>Pictures</label>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                {pictures.map(p => (
+                    <div key={p.pictureId} className="card" style={{ padding: 4, position: 'relative', width: 100, height: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                        <img src={p.url} alt="Diary" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'cover' }} />
+                        <button
+                            onClick={() => handleDeletePicture(p.pictureId)}
+                            className="danger"
+                            style={{ position: 'absolute', top: 2, right: 2, padding: '2px 6px', fontSize: 10, minWidth: 'auto', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                            ×
+                        </button>
+                    </div>
+                ))}
+                <label className="card" style={{
+                    cursor: 'pointer',
+                    width: 100,
+                    height: 100,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: '2px dashed var(--border)',
+                    margin: 0,
+                    transition: 'border-color 0.2s'
+                }}>
+                    {uploading ? <div className="spinner" style={{ width: 20, height: 20 }}></div> : <span style={{ fontSize: 24, color: 'var(--muted)' }}>+</span>}
+                    <input type="file" multiple accept="image/*" onChange={handleFileUpload} style={{ display: 'none' }} disabled={uploading} />
+                </label>
+            </div>
+            <div className="spacer"></div>
+
 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button onClick={handleSave} disabled={loading}>

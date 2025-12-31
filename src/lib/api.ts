@@ -60,28 +60,27 @@ export interface ApiResponse<T = any> {
     [key: string]: any;
 }
 
-const API_URL = 'https://script.google.com/macros/s/AKfycbxR7BQFNg_LHPspcMYXLpdwMQ6Ql6fzr1DVDryXCYdW4aPJlvb4oXFPx-Tng4ofmQLvmw/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbR7BQFNg_LHPspcMYXLpdwMQ6Ql6fzr1DVDryXCYdW4aPJlvb4oXFPx-Tng4ofmQLvmw/exec';
+const DOWNLOAD_API_URL = 'https://script.google.com/macros/s/AKfycbzFMJfzkx4d_14TdMhb-UcPbke7zGLHfTQI-P5u8uCrDDaiNncrgaWfdnRjX9SRSNLLQg/exec';
 const OTP_API_URL = 'https://script.google.com/macros/s/AKfycbzEBBDzJvZvCWYJsoa0HwPwrPWu0AQAbnj8d0uUUNY2xYcFXiIagSsD1GEmHvKgLT5Q2w/exec';
 
 async function apiRequest<T = any>(
     url: string,
     method: 'GET' | 'POST',
-    params: Record<string, string | number | undefined>
+    params: Record<string, string | number | undefined>,
+    body?: string
 ): Promise<ApiResponse<T>> {
     if (method === 'GET') {
         const qs = new URLSearchParams(params as Record<string, string>).toString();
         const res = await fetch(`${url}?${qs}`, { method: 'GET' });
         return res.json();
     } else {
-        // API expects x-www-form-urlencoded
-        const form = new URLSearchParams();
-        Object.entries(params).forEach(([k, v]) => {
-            if (v !== undefined) form.append(k, String(v));
-        });
-        const res = await fetch(url, {
+        const qs = new URLSearchParams(params as Record<string, string>).toString();
+        const fullUrl = url + (qs ? `?${qs}` : '');
+        const res = await fetch(fullUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: form.toString(),
+            body: body || new URLSearchParams(params as Record<string, string>).toString(),
+            headers: body ? { 'Content-Type': 'text/plain' } : { 'Content-Type': 'application/x-www-form-urlencoded' }
         });
         return res.json();
     }
@@ -108,7 +107,32 @@ export const api = {
     removeFriend: (userId: string, friendId: string) => api.post({ action: 'removeFriend', userId, friendId }),
     searchUsers: (query: string) => api.get({ action: 'searchUsers', query }),
     getFriendships: (userId: string) => api.get({ action: 'getFriendships', userId }),
+
+    // Picture helpers
+    uploadPicture: async (file: File) => {
+        const reader = new FileReader();
+        return new Promise<ApiResponse>((resolve, reject) => {
+            reader.onload = async () => {
+                const base64 = (reader.result as string).split(',')[1];
+                try {
+                    const res = await apiRequest(DOWNLOAD_API_URL, 'POST', {
+                        action: 'upload',
+                        filename: file.name,
+                        contentType: file.type
+                    }, base64);
+                    resolve(res);
+                } catch (e) { reject(e); }
+            };
+            reader.onerror = () => reject(new Error('File reading failed'));
+            reader.readAsDataURL(file);
+        });
+    },
+    addPictureMetadata: (userId: string, entryId: string, driveId: string, url: string) =>
+        api.post({ action: 'addPictureMetadata', userId, entryId, driveId, url }),
+    getEntryPictures: (entryId: string) => api.get({ action: 'getEntryPictures', entryId }),
+    deletePicture: (pictureId: string, userId: string) => api.post({ action: 'deletePicture', pictureId, userId })
 };
+
 
 export const normalizePrivacy = (privacy?: string, isPrivate?: string | boolean): 'public' | 'friend' | 'private' => {
     const v = privacy ? String(privacy).toLowerCase() : null;

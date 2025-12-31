@@ -2,6 +2,8 @@ const SHEET_ID = '1OYSzg0ybstarkDfxSZL9SA_gW6D5f8_icnqH7BLoblE';
 const USERS_SHEET_NAME = 'Users';
 const DIARY_ENTRIES_SHEET_NAME = 'DiaryEntries';
 const FRIENDS_SHEET_NAME = 'Friends';
+const PICTURES_SHEET_NAME = 'Pictures';
+
 
 // OTP service is now called directly from HTML
 
@@ -148,7 +150,10 @@ function doGet(e) {
       return searchUsers(e.parameter.query);
     } else if (action === 'getFriendships') {
       return getFriendships(e.parameter.userId);
+    } else if (action === 'getEntryPictures') {
+      return handleGetPictures(e.parameter.entryId);
     }
+
 
     return ContentService
       .createTextOutput(JSON.stringify({ success: false, error: 'Invalid request' }))
@@ -196,7 +201,12 @@ function doPost(e) {
       return removeFriend(e.parameter);
     } else if (action === 'ping') {
       return ping(e.parameter);
+    } else if (action === 'addPictureMetadata') {
+      return handlePictureMetadata(e.parameter);
+    } else if (action === 'deletePicture') {
+      return handleDeletePicture(e.parameter);
     }
+
 
     return ContentService
       .createTextOutput(JSON.stringify({ success: false, error: 'Invalid request' }))
@@ -1058,6 +1068,84 @@ function getOrCreateDiaryEntriesSheet() {
   } catch (error) {
     Logger.log('Error accessing diary entries sheet: ' + error.toString());
     throw new Error('Cannot access Google Sheet. Check your SHEET_ID.');
+  }
+}
+
+function getOrCreatePicturesSheet() {
+  try {
+    const spreadsheet = SpreadsheetApp.openById(SHEET_ID);
+    let sheet;
+    try {
+      sheet = spreadsheet.getSheetByName(PICTURES_SHEET_NAME);
+    } catch (e) {
+      sheet = spreadsheet.insertSheet(PICTURES_SHEET_NAME);
+    }
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(['Picture ID', 'User ID', 'Entry ID', 'Drive ID', 'URL', 'Created']);
+    }
+    return sheet;
+  } catch (error) {
+    Logger.log('Error accessing pictures sheet: ' + error.toString());
+    throw new Error('Cannot access Google Sheet.');
+  }
+}
+
+function handlePictureMetadata(params) {
+  try {
+    const userId = params.userId;
+    const entryId = params.entryId;
+    const driveId = params.driveId;
+    const url = params.url || '';
+    if (!userId || !entryId || !driveId) {
+      return createResponse(false, 'Missing userId, entryId, or driveId');
+    }
+    const sheet = getOrCreatePicturesSheet();
+    const pictureId = generateUUID();
+    sheet.appendRow([pictureId, userId, entryId, driveId, url, new Date()]);
+    return createResponse(true, 'Picture metadata added', { pictureId: pictureId });
+  } catch (e) {
+    return createResponse(false, 'Failed to add picture metadata');
+  }
+}
+
+function handleGetPictures(entryId) {
+  try {
+    if (!entryId) return createResponse(false, 'entryId required');
+    const sheet = getOrCreatePicturesSheet();
+    const data = sheet.getDataRange().getValues();
+    const pictures = [];
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][2] === entryId) {
+        pictures.push({
+          pictureId: data[i][0],
+          driveId: data[i][3],
+          url: data[i][4],
+          created: data[i][5]
+        });
+      }
+    }
+    return createResponse(true, 'Pictures retrieved', { pictures: pictures });
+  } catch (e) {
+    return createResponse(false, 'Failed to get pictures');
+  }
+}
+
+function handleDeletePicture(params) {
+  try {
+    const pictureId = params.pictureId;
+    const userId = params.userId;
+    if (!pictureId || !userId) return createResponse(false, 'pictureId and userId required');
+    const sheet = getOrCreatePicturesSheet();
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][0] === pictureId && data[i][1] === userId) {
+        sheet.deleteRow(i + 1);
+        return createResponse(true, 'Picture deleted');
+      }
+    }
+    return createResponse(false, 'Picture not found or unauthorized');
+  } catch (e) {
+    return createResponse(false, 'Failed to delete picture');
   }
 }
 
