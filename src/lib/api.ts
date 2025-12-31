@@ -68,8 +68,12 @@ async function apiRequest<T = any>(
     url: string,
     method: 'GET' | 'POST',
     params: Record<string, string | number | undefined>,
-    body?: string
+    isJsonBody: boolean = false
 ): Promise<ApiResponse<T>> {
+    const queryParams = { ...params };
+    // Always put 'action' in the URL query string for better redirection handling in Apps Script CORS
+    const action = params.action;
+
     if (method === 'GET') {
         const qs = new URLSearchParams(params as Record<string, string>).toString();
         const res = await fetch(`${url}?${qs}`, { method: 'GET' });
@@ -80,25 +84,27 @@ async function apiRequest<T = any>(
             redirect: 'follow'
         };
 
-        if (body) {
-            // Case for binary/base64 upload (API 2)
-            const qs = new URLSearchParams(params as Record<string, string>).toString();
-            fetchOptions.body = body;
+        // Append action and potentially other metadata to URL for POSTs too
+        const urlWithParams = new URL(url);
+        if (action) urlWithParams.searchParams.append('action', String(action));
+        if (params.filename) urlWithParams.searchParams.append('filename', String(params.filename));
+        if (params.contentType) urlWithParams.searchParams.append('contentType', String(params.contentType));
+
+        if (isJsonBody) {
+            // Send as text/plain to avoid OPTIONS preflight while carrying JSON
             fetchOptions.headers = { 'Content-Type': 'text/plain' };
-            const fullUrl = url + (qs ? `?${qs}` : '');
-            const res = await fetch(fullUrl, fetchOptions);
-            return res.json();
+            fetchOptions.body = JSON.stringify(params);
         } else {
-            // Standard API call (API 1)
             const form = new URLSearchParams();
             Object.entries(params).forEach(([k, v]) => {
                 if (v !== undefined) form.append(k, String(v));
             });
             fetchOptions.body = form.toString();
             fetchOptions.headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
-            const res = await fetch(url, fetchOptions);
-            return res.json();
         }
+
+        const res = await fetch(urlWithParams.toString(), fetchOptions);
+        return res.json();
     }
 }
 
@@ -125,17 +131,20 @@ export const api = {
     getFriendships: (userId: string) => api.get({ action: 'getFriendships', userId }),
 
     // Picture helpers
+    postToUrl: (url: string, params: any) => apiRequest(url, 'POST', params),
     uploadPicture: async (file: File) => {
         const reader = new FileReader();
         return new Promise<ApiResponse>((resolve, reject) => {
             reader.onload = async () => {
                 const base64 = (reader.result as string).split(',')[1];
                 try {
+                    // Send as text/plain JSON for maximum compatibility
                     const res = await apiRequest(DOWNLOAD_API_URL, 'POST', {
                         action: 'upload',
                         filename: file.name,
-                        contentType: file.type
-                    }, base64);
+                        contentType: file.type,
+                        content: base64
+                    }, true); // true = isJsonBody
                     resolve(res);
                 } catch (e) { reject(e); }
             };

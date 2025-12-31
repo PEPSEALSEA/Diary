@@ -5,15 +5,29 @@
 
 const folderId = "1qOsEpoiMWZc-2T7y59a8945LANumqD47";
 
+function doGet(e) {
+  return createResponse(true, 'Upload service is online');
+}
+
 function doPost(e) {
   try {
-    const params = e.parameter;
-    const action = params.action;
+    var params = e.parameter || {};
+    var postData = {};
+    if (e.postData && e.postData.contents) {
+      try {
+        postData = JSON.parse(e.postData.contents);
+      } catch (ex) { }
+    }
+
+    var action = params.action || postData.action;
+    var filename = params.filename || postData.filename || ("Image_" + new Date().getTime());
+    var base64Data = params.content || postData.content;
+    var contentType = params.contentType || postData.contentType || "image/jpeg";
 
     if (action === 'upload') {
-      const filename = params.filename || ("Image_" + new Date().getTime());
-      const base64Data = e.postData.contents;
-      const contentType = params.contentType || "image/jpeg";
+      if (!base64Data) {
+        return createResponse(false, 'Missing content data');
+      }
 
       const decodedData = Utilities.base64Decode(base64Data);
       const blob = Utilities.newBlob(decodedData, contentType, filename);
@@ -30,7 +44,7 @@ function doPost(e) {
       });
     }
 
-    return createResponse(false, 'Invalid action');
+    return createResponse(false, 'Invalid action: ' + action);
   } catch (error) {
     return createResponse(false, 'Upload failed: ' + error.toString());
   }

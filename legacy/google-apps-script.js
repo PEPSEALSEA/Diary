@@ -205,6 +205,8 @@ function doPost(e) {
       return handlePictureMetadata(e.parameter);
     } else if (action === 'deletePicture') {
       return handleDeletePicture(e.parameter);
+    } else if (action === 'setupSheets') {
+      return setupSheets();
     }
 
 
@@ -992,36 +994,42 @@ function getUserDiaryEntry(userId, date) {
 
 // ===== HELPER FUNCTIONS =====
 
+/**
+ * Internal helper to ensure a sheet exists and has all required columns.
+ * @param {string} sheetName - The name of the sheet.
+ * @param {string[]} requiredColumns - List of column names that MUST exist.
+ * @returns {GoogleAppsScript.Spreadsheet.Sheet}
+ */
+function ensureSheetAndColumns(sheetName, requiredColumns) {
+  const spreadsheet = SpreadsheetApp.openById(SHEET_ID);
+  let sheet = spreadsheet.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(sheetName);
+  }
+
+  if (sheet.getLastRow() === 0) {
+    // New sheet, append all required headers
+    sheet.appendRow(requiredColumns);
+  } else {
+    // Existing sheet, check for missing columns
+    const lastCol = sheet.getLastColumn();
+    const headerRow = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0] : [];
+
+    requiredColumns.forEach((colName, index) => {
+      if (headerRow.indexOf(colName) === -1) {
+        // Column missing, append to the end
+        const newColPos = sheet.getLastColumn() + 1;
+        sheet.getRange(1, newColPos).setValue(colName);
+      }
+    });
+  }
+  return sheet;
+}
+
 function getOrCreateUsersSheet() {
   try {
-    const spreadsheet = SpreadsheetApp.openById(SHEET_ID);
-    let sheet;
-
-    try {
-      sheet = spreadsheet.getSheetByName(USERS_SHEET_NAME);
-    } catch (e) {
-      sheet = spreadsheet.insertSheet(USERS_SHEET_NAME);
-    }
-
-    if (sheet.getLastRow() === 0) {
-      sheet.appendRow(['User ID', 'Email', 'Username', 'Real Password', 'Password Hash', 'Created Date', 'Last Seen']);
-    } else {
-      try {
-        const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-        if (header.indexOf('Last Seen') === -1) {
-          sheet.insertColumnAfter(6);
-          sheet.getRange(1, 7).setValue('Last Seen');
-        }
-        if (header.indexOf('Avatar URL') === -1) {
-          sheet.getRange(1, 8).setValue('Avatar URL');
-        }
-        if (header.indexOf('Experience') === -1) {
-          sheet.getRange(1, 9).setValue('Experience');
-        }
-      } catch (e) { }
-    }
-
-    return sheet;
+    const requiredColumns = ['User ID', 'Email', 'Username', 'Real Password', 'Password Hash', 'Created Date', 'Last Seen', 'Avatar URL', 'Experience'];
+    return ensureSheetAndColumns(USERS_SHEET_NAME, requiredColumns);
   } catch (error) {
     Logger.log('Error accessing users sheet: ' + error.toString());
     throw new Error('Cannot access Google Sheet. Check your SHEET_ID.');
@@ -1030,22 +1038,17 @@ function getOrCreateUsersSheet() {
 
 function getOrCreateDiaryEntriesSheet() {
   try {
-    const spreadsheet = SpreadsheetApp.openById(SHEET_ID);
-    let sheet;
+    const requiredColumns = ['Entry ID', 'User ID', 'Username', 'Date', 'Title', 'Content', 'Privacy', 'Created Date', 'Last Modified'];
+    const sheet = ensureSheetAndColumns(DIARY_ENTRIES_SHEET_NAME, requiredColumns);
 
+    // Migration logic for 'Is Private' -> 'Privacy'
     try {
-      sheet = spreadsheet.getSheetByName(DIARY_ENTRIES_SHEET_NAME);
-    } catch (e) {
-      sheet = spreadsheet.insertSheet(DIARY_ENTRIES_SHEET_NAME);
-    }
-
-    if (sheet.getLastRow() === 0) {
-      sheet.appendRow(['Entry ID', 'User ID', 'Username', 'Date', 'Title', 'Content', 'Privacy', 'Created Date', 'Last Modified']);
-    } else {
-      // Migrate header/value from legacy 'Is Private' boolean to 'Privacy' string
-      try {
-        const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-        if (header[6] === 'Is Private') {
+      const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      const isPrivateIndex = header.indexOf('Is Private');
+      if (isPrivateIndex !== -1) {
+        // If 'Privacy' also exists, we might need to be careful, but ensureSheetAndColumns will add 'Privacy' at the end if missing.
+        // For simplicity, if 'Is Private' exists at index 6 (traditional spot), we rename it.
+        if (isPrivateIndex === 6) {
           sheet.getRange(1, 7).setValue('Privacy');
           const lastRow = sheet.getLastRow();
           if (lastRow > 1) {
@@ -1061,8 +1064,8 @@ function getOrCreateDiaryEntriesSheet() {
             colRange.setValues(values);
           }
         }
-      } catch (e) { }
-    }
+      }
+    } catch (e) { }
 
     return sheet;
   } catch (error) {
@@ -1073,17 +1076,8 @@ function getOrCreateDiaryEntriesSheet() {
 
 function getOrCreatePicturesSheet() {
   try {
-    const spreadsheet = SpreadsheetApp.openById(SHEET_ID);
-    let sheet;
-    try {
-      sheet = spreadsheet.getSheetByName(PICTURES_SHEET_NAME);
-    } catch (e) {
-      sheet = spreadsheet.insertSheet(PICTURES_SHEET_NAME);
-    }
-    if (sheet.getLastRow() === 0) {
-      sheet.appendRow(['Picture ID', 'User ID', 'Entry ID', 'Drive ID', 'URL', 'Created']);
-    }
-    return sheet;
+    const requiredColumns = ['Picture ID', 'User ID', 'Entry ID', 'Drive ID', 'URL', 'Created'];
+    return ensureSheetAndColumns(PICTURES_SHEET_NAME, requiredColumns);
   } catch (error) {
     Logger.log('Error accessing pictures sheet: ' + error.toString());
     throw new Error('Cannot access Google Sheet.');
@@ -1385,29 +1379,34 @@ function getAllUsers() {
 
 function getOrCreateFriendsSheet() {
   try {
-    const spreadsheet = SpreadsheetApp.openById(SHEET_ID);
-    let sheet = spreadsheet.getSheetByName(FRIENDS_SHEET_NAME);
-    if (!sheet) {
-      sheet = spreadsheet.insertSheet(FRIENDS_SHEET_NAME);
-    }
-    if (sheet.getLastRow() === 0) {
-      sheet.appendRow(['Requester ID', 'Recipient ID', 'Status', 'Created Date', 'Last Updated']);
-    } else {
-      // Migrate old 4-column structure to 5-column with status
-      const header = sheet.getRange(1, 1, 1, Math.max(4, sheet.getLastColumn())).getValues()[0];
-      if (header.length < 5 || header[2] !== 'Status') {
-        sheet.insertColumnAfter(2);
-        sheet.getRange(1, 3).setValue('Status');
-        sheet.getRange(1, 5).setValue('Last Updated');
+    const requiredColumns = ['Requester ID', 'Recipient ID', 'Status', 'Created Date', 'Last Updated'];
+    const sheet = ensureSheetAndColumns(FRIENDS_SHEET_NAME, requiredColumns);
+
+    // Migration for Status column if it was missing in old 4-column structure
+    try {
+      const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      if (header.indexOf('Status') === -1) {
+        // This is handled by ensureSheetAndColumns but the specific migration logic
+        // of filling 'accepted' for existing rows is unique here.
+        // However, ensureSheetAndColumns will have added 'Status' at the end.
+        // Let's check where 'Status' is now.
+        const statusIdx = header.indexOf('Status') === -1 ? sheet.getLastColumn() : header.indexOf('Status') + 1;
         const lastRow = sheet.getLastRow();
         if (lastRow > 1) {
-          const statusRange = sheet.getRange(2, 3, lastRow - 1, 1);
-          const vals = [];
-          for (let i = 0; i < lastRow - 1; i++) vals.push(['accepted']);
-          statusRange.setValues(vals);
+          const statusRange = sheet.getRange(2, statusIdx, lastRow - 1, 1);
+          const vals = statusRange.getValues();
+          let changed = false;
+          for (let i = 0; i < vals.length; i++) {
+            if (!vals[i][0]) {
+              vals[i][0] = 'accepted';
+              changed = true;
+            }
+          }
+          if (changed) statusRange.setValues(vals);
         }
       }
-    }
+    } catch (e) { }
+
     return sheet;
   } catch (e) {
     Logger.log('Error accessing friends sheet: ' + e.toString());
