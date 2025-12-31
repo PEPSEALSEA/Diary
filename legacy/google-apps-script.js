@@ -1297,12 +1297,19 @@ function verifyPassword(password, hash) {
   return hashPassword(password) === hash;
 }
 
-function createResponse(success, message, data = {}) {
-  const response = {
+function createResponse(success, message, data) {
+  var dataObj = data || {};
+  var response = {
     success: success,
-    message: message,
-    ...data
+    message: message
   };
+
+  // Mixin data
+  for (var key in dataObj) {
+    if (dataObj.hasOwnProperty(key)) {
+      response[key] = dataObj[key];
+    }
+  }
 
   if (!success) {
     response.error = message;

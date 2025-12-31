@@ -75,14 +75,30 @@ async function apiRequest<T = any>(
         const res = await fetch(`${url}?${qs}`, { method: 'GET' });
         return res.json();
     } else {
-        const qs = new URLSearchParams(params as Record<string, string>).toString();
-        const fullUrl = url + (qs ? `?${qs}` : '');
-        const res = await fetch(fullUrl, {
+        const fetchOptions: RequestInit = {
             method: 'POST',
-            body: body || new URLSearchParams(params as Record<string, string>).toString(),
-            headers: body ? { 'Content-Type': 'text/plain' } : { 'Content-Type': 'application/x-www-form-urlencoded' }
-        });
-        return res.json();
+            redirect: 'follow'
+        };
+
+        if (body) {
+            // Case for binary/base64 upload (API 2)
+            const qs = new URLSearchParams(params as Record<string, string>).toString();
+            fetchOptions.body = body;
+            fetchOptions.headers = { 'Content-Type': 'text/plain' };
+            const fullUrl = url + (qs ? `?${qs}` : '');
+            const res = await fetch(fullUrl, fetchOptions);
+            return res.json();
+        } else {
+            // Standard API call (API 1)
+            const form = new URLSearchParams();
+            Object.entries(params).forEach(([k, v]) => {
+                if (v !== undefined) form.append(k, String(v));
+            });
+            fetchOptions.body = form.toString();
+            fetchOptions.headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+            const res = await fetch(url, fetchOptions);
+            return res.json();
+        }
     }
 }
 

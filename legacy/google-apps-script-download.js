@@ -36,8 +36,17 @@ function doPost(e) {
   }
 }
 
-function createResponse(success, message, data = {}) {
-  const result = { success, message, ...data };
+function createResponse(success, message, data) {
+  var dataObj = data || {};
+  var result = {
+    success: success,
+    message: message
+  };
+  for (var key in dataObj) {
+    if (dataObj.hasOwnProperty(key)) {
+      result[key] = dataObj[key];
+    }
+  }
   return ContentService.createTextOutput(JSON.stringify(result))
     .setMimeType(ContentService.MimeType.JSON);
 }
