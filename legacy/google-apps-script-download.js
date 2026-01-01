@@ -26,9 +26,12 @@ function doPost(e) {
     var action = params.action || postData.action;
 
     // Handle FormData upload (multipart/form-data)
+    // Google Apps Script automatically parses multipart/form-data into e.parameters
+    // Check e.parameters.myFile FIRST as it's the most reliable way
     if (e.parameters && e.parameters.myFile && e.parameters.myFile.length > 0) {
       const fileBlob = e.parameters.myFile[0];
       const filename = params.filename || fileBlob.getName() || ("Image_" + new Date().getTime());
+      const contentType = params.contentType || fileBlob.getContentType() || "image/jpeg";
 
       const folder = DriveApp.getFolderById(folderId);
       const file = folder.createFile(fileBlob);
@@ -41,6 +44,41 @@ function doPost(e) {
         downloadUrl: file.getDownloadUrl(),
         viewUrl: file.getUrl()
       });
+    }
+
+    // Fallback: Handle multipart/form-data manually if e.parameters didn't work
+    if (e.postData && e.postData.type && e.postData.type.indexOf('multipart') !== -1) {
+      var fileBlob = null;
+      var filename = params.filename || ("Image_" + new Date().getTime() + ".jpg");
+      var contentType = params.contentType || "image/jpeg";
+
+      // Try to get blob from postData.contents
+      if (e.postData.contents) {
+        // If it's already a blob, use it directly
+        if (typeof e.postData.contents.getBlob === 'function' || e.postData.contents.getBytes) {
+          fileBlob = e.postData.contents;
+        } else if (typeof e.postData.contents === 'string') {
+          // Try to extract file from multipart
+          fileBlob = parseMultipartFormData(e.postData.contents, e.postData.type);
+        } else {
+          // Assume it's a blob
+          fileBlob = e.postData.contents;
+        }
+      }
+
+      if (fileBlob) {
+        const folder = DriveApp.getFolderById(folderId);
+        const file = folder.createFile(fileBlob);
+        if (filename) file.setName(filename);
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+        return createResponse(true, 'Upload successful', {
+          driveId: file.getId(),
+          url: 'https://lh3.googleusercontent.com/u/0/d/' + file.getId(),
+          downloadUrl: file.getDownloadUrl(),
+          viewUrl: file.getUrl()
+        });
+      }
     }
 
     // Handle Base64 upload (JSON)
@@ -72,6 +110,55 @@ function doPost(e) {
   } catch (error) {
     return createResponse(false, 'Upload failed: ' + error.toString());
   }
+}
+
+function parseMultipartFormData(body, contentType) {
+  try {
+    // Extract boundary from Content-Type header
+    var boundaryMatch = contentType.match(/boundary=([^;]+)/);
+    if (!boundaryMatch) return null;
+
+    var boundary = '--' + boundaryMatch[1].trim();
+    var parts = body.split(boundary);
+
+    // Find the part with the file (contains Content-Disposition: form-data; name="myFile")
+    for (var i = 0; i < parts.length; i++) {
+      var part = parts[i];
+      if (part.indexOf('name="myFile"') !== -1 || part.indexOf("name='myFile'") !== -1) {
+        // Extract the file content (after the headers and blank line)
+        var headerEnd = part.indexOf('\r\n\r\n');
+        if (headerEnd === -1) headerEnd = part.indexOf('\n\n');
+        if (headerEnd === -1) continue;
+
+        var fileContent = part.substring(headerEnd).replace(/^[\r\n]+/, '').replace(/[\r\n]+$/, '');
+
+        // Extract content type if available
+        var contentTypeMatch = part.match(/Content-Type:\s*([^\r\n]+)/i);
+        var fileContentType = contentTypeMatch ? contentTypeMatch[1].trim() : 'image/jpeg';
+
+        // Try to convert to blob - file content might be binary or base64
+        try {
+          // First try as base64 (if it's encoded)
+          var bytes = Utilities.base64Decode(fileContent);
+          return Utilities.newBlob(bytes, fileContentType);
+        } catch (e) {
+          // If base64 decode fails, try as raw binary string
+          try {
+            var bytes = [];
+            for (var j = 0; j < fileContent.length; j++) {
+              bytes.push(fileContent.charCodeAt(j) & 0xFF);
+            }
+            return Utilities.newBlob(bytes, fileContentType);
+          } catch (e2) {
+            Logger.log('Error creating blob from multipart: ' + e2.toString());
+          }
+        }
+      }
+    }
+  } catch (e) {
+    Logger.log('Error parsing multipart: ' + e.toString());
+  }
+  return null;
 }
 
 function createResponse(success, message, data) {
