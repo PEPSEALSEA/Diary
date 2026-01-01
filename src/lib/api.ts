@@ -143,26 +143,20 @@ export const api = {
     // Picture helpers
     postToUrl: (url: string, params: any) => apiRequest(url, 'POST', params),
     uploadPicture: async (file: File) => {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = async () => {
-                try {
-                    const base64 = (reader.result as string).split(',')[1] || (reader.result as string);
-                    const res = await apiRequest(DOWNLOAD_API_URL, 'POST', {
-                        action: 'upload',
-                        filename: file.name,
-                        contentType: file.type,
-                        content: base64
-                    }, true);
-                    resolve(res);
-                } catch (e) {
-                    console.error('Upload Error:', e);
-                    reject(e);
-                }
-            };
-            reader.onerror = () => reject(new Error('Failed to read file'));
-            reader.readAsDataURL(file);
-        });
+        const formData = new FormData();
+        formData.append('myFile', file);
+        formData.append('action', 'upload');
+        formData.append('filename', file.name);
+        formData.append('contentType', file.type);
+
+        try {
+            // Using DOWNLOAD_API_URL which we updated to support FormData
+            const res = await apiRequest(DOWNLOAD_API_URL, 'POST', formData as any);
+            return res;
+        } catch (e) {
+            console.error('Upload Error:', e);
+            throw e;
+        }
     },
     addPictureMetadata: (userId: string, entryId: string, driveId: string, url: string) =>
         api.post({ action: 'addPictureMetadata', userId, entryId, driveId, url }),
