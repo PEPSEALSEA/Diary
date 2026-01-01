@@ -148,32 +148,14 @@ export const api = {
             reader.onload = async () => {
                 try {
                     const base64String = (reader.result as string).split(',')[1];
-                    if (!base64String) {
-                        reject(new Error('Failed to convert file to base64'));
-                        return;
-                    }
-                    
                     const params = {
                         action: 'upload',
                         filename: file.name,
                         contentType: file.type || 'image/jpeg',
                         content: base64String
                     };
-                    
-                    try {
-                        const res = await apiRequest(DOWNLOAD_API_URL, 'POST', params, true);
-                        if (res && res.success) {
-                            resolve(res);
-                        } else {
-                            const errorMsg = res?.message || res?.error || 'Upload failed';
-                            console.error('Upload failed:', errorMsg, res);
-                            reject(new Error(errorMsg));
-                        }
-                    } catch (fetchError: any) {
-                        console.error('Upload fetch error:', fetchError);
-                        const errorMsg = fetchError?.message || fetchError?.toString() || 'Failed to upload file';
-                        reject(new Error(errorMsg));
-                    }
+                    const res = await apiRequest(DOWNLOAD_API_URL, 'POST', params, false);
+                    resolve(res);
                 } catch (e) {
                     console.error('Upload Error:', e);
                     reject(e);
