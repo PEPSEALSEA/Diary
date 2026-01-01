@@ -14,13 +14,29 @@ function doOptions(e) {
 }
 
 function doPost(e) {
+  var debugInfo = {
+    hasParameters: !!e.parameters,
+    parameterKeys: e.parameters ? Object.keys(e.parameters) : [],
+    hasPostData: !!e.postData,
+    postDataType: e.postData ? e.postData.type : null,
+    hasContents: !!(e.postData && e.postData.contents),
+    contentsType: e.postData && e.postData.contents ? typeof e.postData.contents : null
+  };
+  
   try {
     var params = e.parameter || {};
     var postData = {};
+    var isMultipart = false;
+    
     if (e.postData && e.postData.contents) {
       try {
         postData = JSON.parse(e.postData.contents);
-      } catch (ex) { }
+      } catch (ex) {
+        // Not JSON, might be multipart
+        if (e.postData.type && e.postData.type.indexOf('multipart') !== -1) {
+          isMultipart = true;
+        }
+      }
     }
 
     var action = params.action || postData.action;
@@ -28,41 +44,65 @@ function doPost(e) {
     // Handle FormData upload (multipart/form-data)
     // Google Apps Script automatically parses multipart/form-data into e.parameters
     // Check e.parameters.myFile FIRST as it's the most reliable way
-    if (e.parameters && e.parameters.myFile && e.parameters.myFile.length > 0) {
-      const fileBlob = e.parameters.myFile[0];
-      const filename = params.filename || fileBlob.getName() || ("Image_" + new Date().getTime());
-      const contentType = params.contentType || fileBlob.getContentType() || "image/jpeg";
+    if (e.parameters && e.parameters.myFile) {
+      var fileBlob = null;
+      if (Array.isArray(e.parameters.myFile) && e.parameters.myFile.length > 0) {
+        fileBlob = e.parameters.myFile[0];
+      } else if (e.parameters.myFile && !Array.isArray(e.parameters.myFile)) {
+        fileBlob = e.parameters.myFile;
+      }
+      
+      if (fileBlob) {
+        const filename = params.filename || (fileBlob.getName ? fileBlob.getName() : null) || ("Image_" + new Date().getTime());
+        const contentType = params.contentType || (fileBlob.getContentType ? fileBlob.getContentType() : null) || "image/jpeg";
 
-      const folder = DriveApp.getFolderById(folderId);
-      const file = folder.createFile(fileBlob);
-      if (filename) file.setName(filename);
-      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        const folder = DriveApp.getFolderById(folderId);
+        const file = folder.createFile(fileBlob);
+        if (filename) file.setName(filename);
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
 
-      return createResponse(true, 'Upload successful', {
-        driveId: file.getId(),
-        url: 'https://lh3.googleusercontent.com/u/0/d/' + file.getId(),
-        downloadUrl: file.getDownloadUrl(),
-        viewUrl: file.getUrl()
-      });
+        return createResponse(true, 'Upload successful', {
+          driveId: file.getId(),
+          url: 'https://lh3.googleusercontent.com/u/0/d/' + file.getId(),
+          downloadUrl: file.getDownloadUrl(),
+          viewUrl: file.getUrl()
+        });
+      }
     }
 
     // Fallback: Handle multipart/form-data manually if e.parameters didn't work
-    if (e.postData && e.postData.type && e.postData.type.indexOf('multipart') !== -1) {
+    if (isMultipart || (e.postData && e.postData.type && e.postData.type.indexOf('multipart') !== -1)) {
       var fileBlob = null;
       var filename = params.filename || ("Image_" + new Date().getTime() + ".jpg");
       var contentType = params.contentType || "image/jpeg";
 
       // Try to get blob from postData.contents
-      if (e.postData.contents) {
-        // If it's already a blob, use it directly
-        if (typeof e.postData.contents.getBlob === 'function' || e.postData.contents.getBytes) {
+      if (e.postData && e.postData.contents) {
+        // Check if it's already a blob (has getBytes method)
+        if (e.postData.contents.getBytes) {
+          // It's a blob - use it directly
           fileBlob = e.postData.contents;
+          // Try to get content type from blob if available
+          try {
+            var blobType = fileBlob.getContentType();
+            if (blobType && blobType !== 'application/octet-stream') {
+              contentType = blobType;
+            }
+          } catch (ex) {}
         } else if (typeof e.postData.contents === 'string') {
-          // Try to extract file from multipart
+          // It's a string - try to extract file from multipart string
           fileBlob = parseMultipartFormData(e.postData.contents, e.postData.type);
         } else {
-          // Assume it's a blob
-          fileBlob = e.postData.contents;
+          // Try to use as blob directly
+          try {
+            if (e.postData.contents.getBlob) {
+              fileBlob = e.postData.contents.getBlob();
+            } else {
+              fileBlob = e.postData.contents;
+            }
+          } catch (ex) {
+            Logger.log('Error using postData.contents as blob: ' + ex.toString());
+          }
         }
       }
 
@@ -78,17 +118,19 @@ function doPost(e) {
           downloadUrl: file.getDownloadUrl(),
           viewUrl: file.getUrl()
         });
+      } else {
+        return createResponse(false, 'Failed to extract file from multipart data. postData type: ' + (e.postData ? e.postData.type : 'none') + ', has contents: ' + (e.postData && e.postData.contents ? 'yes' : 'no') + ', contents type: ' + (e.postData && e.postData.contents ? typeof e.postData.contents : 'none'));
       }
     }
 
-    // Handle Base64 upload (JSON)
-    if (action === 'upload') {
+    // Handle Base64 upload (JSON) - only if NOT multipart
+    if (action === 'upload' && !isMultipart) {
       var filename = params.filename || postData.filename || ("Image_" + new Date().getTime());
       var base64Data = params.content || postData.content;
       var contentType = params.contentType || postData.contentType || "image/jpeg";
 
       if (!base64Data) {
-        return createResponse(false, 'Missing content data');
+        return createResponse(false, 'Missing content data. Action: ' + action + ', isMultipart: ' + isMultipart);
       }
 
       const decodedData = Utilities.base64Decode(base64Data);
@@ -106,9 +148,35 @@ function doPost(e) {
       });
     }
 
-    return createResponse(false, 'Invalid action or missing file: ' + (action || 'none'));
+    // Last attempt: check all parameters for any blob/file
+    if (e.parameters) {
+      for (var key in e.parameters) {
+        if (e.parameters.hasOwnProperty(key)) {
+          var paramValue = e.parameters[key];
+          if (paramValue && (paramValue.getBytes || (Array.isArray(paramValue) && paramValue.length > 0 && paramValue[0].getBytes))) {
+            var fileBlob = Array.isArray(paramValue) ? paramValue[0] : paramValue;
+            var filename = params.filename || (fileBlob.getName ? fileBlob.getName() : null) || ("Image_" + new Date().getTime());
+            var contentType = params.contentType || (fileBlob.getContentType ? fileBlob.getContentType() : null) || "image/jpeg";
+            
+            const folder = DriveApp.getFolderById(folderId);
+            const file = folder.createFile(fileBlob);
+            if (filename) file.setName(filename);
+            file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+            
+            return createResponse(true, 'Upload successful', {
+              driveId: file.getId(),
+              url: 'https://lh3.googleusercontent.com/u/0/d/' + file.getId(),
+              downloadUrl: file.getDownloadUrl(),
+              viewUrl: file.getUrl()
+            });
+          }
+        }
+      }
+    }
+    
+    return createResponse(false, 'Invalid action or missing file. Action: ' + (action || 'none') + ', isMultipart: ' + isMultipart + ', has parameters.myFile: ' + (e.parameters && e.parameters.myFile ? 'yes' : 'no') + ', Debug: ' + JSON.stringify(debugInfo));
   } catch (error) {
-    return createResponse(false, 'Upload failed: ' + error.toString());
+    return createResponse(false, 'Upload failed: ' + error.toString() + '. Stack: ' + (error.stack || 'no stack') + ', Debug: ' + JSON.stringify(debugInfo));
   }
 }
 
