@@ -143,29 +143,38 @@ export const api = {
     // Picture helpers
     postToUrl: (url: string, params: any) => apiRequest(url, 'POST', params),
     uploadPicture: async (file: File) => {
-        const formData = new FormData();
-        formData.append('myFile', file);
-        formData.append('action', 'upload');
-        formData.append('filename', file.name);
-        formData.append('contentType', file.type || 'image/jpeg');
-
-        try {
-            const url = new URL(DOWNLOAD_API_URL);
-            url.searchParams.append('action', 'upload');
-            url.searchParams.append('filename', file.name);
-            url.searchParams.append('contentType', file.type || 'image/jpeg');
-            
-            const res = await fetch(url.toString(), {
-                method: 'POST',
-                body: formData,
-                redirect: 'follow'
-            });
-            
-            return await res.json();
-        } catch (e) {
-            console.error('Upload Error:', e);
-            throw e;
-        }
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = async () => {
+                try {
+                    const base64String = (reader.result as string).split(',')[1];
+                    const formData = new URLSearchParams();
+                    formData.append('action', 'upload');
+                    formData.append('filename', file.name);
+                    formData.append('contentType', file.type || 'image/jpeg');
+                    formData.append('content', base64String);
+                    
+                    const res = await fetch(DOWNLOAD_API_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        body: formData.toString(),
+                        redirect: 'follow'
+                    });
+                    
+                    const result = await res.json();
+                    resolve(result);
+                } catch (e) {
+                    console.error('Upload Error:', e);
+                    reject(e);
+                }
+            };
+            reader.onerror = () => {
+                reject(new Error('Failed to read file'));
+            };
+            reader.readAsDataURL(file);
+        });
     },
     addPictureMetadata: (userId: string, entryId: string, driveId: string, url: string) =>
         api.post({ action: 'addPictureMetadata', userId, entryId, driveId, url }),
