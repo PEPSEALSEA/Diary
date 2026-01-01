@@ -148,23 +148,14 @@ export const api = {
             reader.onload = async () => {
                 try {
                     const base64String = (reader.result as string).split(',')[1];
-                    const formData = new URLSearchParams();
-                    formData.append('action', 'upload');
-                    formData.append('filename', file.name);
-                    formData.append('contentType', file.type || 'image/jpeg');
-                    formData.append('content', base64String);
-                    
-                    const res = await fetch(DOWNLOAD_API_URL, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded'
-                        },
-                        body: formData.toString(),
-                        redirect: 'follow'
-                    });
-                    
-                    const result = await res.json();
-                    resolve(result);
+                    const params = {
+                        action: 'upload',
+                        filename: file.name,
+                        contentType: file.type || 'image/jpeg',
+                        content: base64String
+                    };
+                    const res = await apiRequest(DOWNLOAD_API_URL, 'POST', params, false);
+                    resolve(res);
                 } catch (e) {
                     console.error('Upload Error:', e);
                     reject(e);
