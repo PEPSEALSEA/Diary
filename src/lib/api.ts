@@ -69,13 +69,9 @@ const OTP_API_URL = 'https://script.google.com/macros/s/AKfycbzEBBDzJvZvCWYJsoa0
 async function apiRequest<T = any>(
     url: string,
     method: 'GET' | 'POST',
-    params: Record<string, string | number | undefined>,
+    params: Record<string, string | number | undefined> | FormData,
     isJsonBody: boolean = false
 ): Promise<ApiResponse<T>> {
-    const queryParams = { ...params };
-    // Always put 'action' in the URL query string for better redirection handling in Apps Script CORS
-    const action = params.action;
-
     if (method === 'GET') {
         const qs = new URLSearchParams(params as Record<string, string>).toString();
         const res = await fetch(`${url}?${qs}`, { method: 'GET' });
@@ -86,26 +82,35 @@ async function apiRequest<T = any>(
             redirect: 'follow'
         };
 
-        // Append action and potentially other metadata to URL for POSTs too
         const urlWithParams = new URL(url);
-        if (action) urlWithParams.searchParams.append('action', String(action));
-        if (params.filename) urlWithParams.searchParams.append('filename', String(params.filename));
-        if (params.contentType) urlWithParams.searchParams.append('contentType', String(params.contentType));
 
         if (params instanceof FormData) {
-            // Browser sets Content-Type automatically for FormData
+            const action = params.get('action');
+            const filename = params.get('filename');
+            const contentType = params.get('contentType');
+            
+            if (action) urlWithParams.searchParams.append('action', String(action));
+            if (filename) urlWithParams.searchParams.append('filename', String(filename));
+            if (contentType) urlWithParams.searchParams.append('contentType', String(contentType));
+            
             fetchOptions.body = params;
-        } else if (isJsonBody) {
-            // Send as text/plain to avoid OPTIONS preflight while carrying JSON
-            fetchOptions.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
-            fetchOptions.body = JSON.stringify(params);
         } else {
-            const form = new URLSearchParams();
-            Object.entries(params).forEach(([k, v]) => {
-                if (v !== undefined) form.append(k, String(v));
-            });
-            fetchOptions.body = form.toString();
-            fetchOptions.headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+            const action = params.action;
+            if (action) urlWithParams.searchParams.append('action', String(action));
+            if (params.filename) urlWithParams.searchParams.append('filename', String(params.filename));
+            if (params.contentType) urlWithParams.searchParams.append('contentType', String(params.contentType));
+
+            if (isJsonBody) {
+                fetchOptions.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
+                fetchOptions.body = JSON.stringify(params);
+            } else {
+                const form = new URLSearchParams();
+                Object.entries(params).forEach(([k, v]) => {
+                    if (v !== undefined) form.append(k, String(v));
+                });
+                fetchOptions.body = form.toString();
+                fetchOptions.headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+            }
         }
 
         const res = await fetch(urlWithParams.toString(), fetchOptions);

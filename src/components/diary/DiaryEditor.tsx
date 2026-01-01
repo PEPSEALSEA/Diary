@@ -283,19 +283,25 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
             try {
                 const uploadRes = await api.uploadPicture(file);
                 if (uploadRes.success && uploadRes.driveId) {
-                    await api.addPictureMetadata(user.id, currentEntryId!, uploadRes.driveId, uploadRes.url);
-                    successCount++;
+                    const metadataRes = await api.addPictureMetadata(user.id, currentEntryId!, uploadRes.driveId, uploadRes.url);
+                    if (metadataRes.success) {
+                        successCount++;
+                    } else {
+                        console.error('Failed to add metadata for', file.name, metadataRes.error);
+                    }
+                } else {
+                    console.error('Upload failed for', file.name, uploadRes.error || uploadRes.message || 'Unknown error');
                 }
-            } catch (err) {
+            } catch (err: any) {
                 console.error('Upload failed for', file.name, err);
             }
         }
 
         if (successCount > 0) {
-            toast(`Uploaded ${successCount} pictures`);
+            toast(`Uploaded ${successCount} picture${successCount > 1 ? 's' : ''}`);
             loadPictures(currentEntryId!);
         } else {
-            toast('Failed to upload pictures', 'error');
+            toast(`Failed to upload pictures${fileArray.length > 1 ? ` (tried ${fileArray.length} files)` : ''}. Check console for details.`, 'error');
         }
         setUploading(false);
         // Reset input
