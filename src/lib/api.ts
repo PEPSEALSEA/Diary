@@ -59,9 +59,11 @@ export interface ApiResponse<T = any> {
     total?: number;
     [key: string]: any;
 }
-
-const API_URL = 'https://script.google.com/macros/s/AKfycbR7BQFNg_LHPspcMYXLpdwMQ6Ql6fzr1DVDryXCYdW4aPJlvb4oXFPx-Tng4ofmQLvmw/exec';
+// google-apps-script.js
+const API_URL = 'https://script.google.com/macros/s/AKfycbxR7BQFNg_LHPspcMYXLpdwMQ6Ql6fzr1DVDryXCYdW4aPJlvb4oXFPx-Tng4ofmQLvmw/exec';
+// google-apps-script-download.js
 const DOWNLOAD_API_URL = 'https://script.google.com/macros/s/AKfycbzFMJfzkx4d_14TdMhb-UcPbke7zGLHfTQI-P5u8uCrDDaiNncrgaWfdnRjX9SRSNLLQg/exec';
+// google-apps-script-verify-opt.js
 const OTP_API_URL = 'https://script.google.com/macros/s/AKfycbzEBBDzJvZvCWYJsoa0HwPwrPWu0AQAbnj8d0uUUNY2xYcFXiIagSsD1GEmHvKgLT5Q2w/exec';
 
 async function apiRequest<T = any>(
@@ -90,9 +92,12 @@ async function apiRequest<T = any>(
         if (params.filename) urlWithParams.searchParams.append('filename', String(params.filename));
         if (params.contentType) urlWithParams.searchParams.append('contentType', String(params.contentType));
 
-        if (isJsonBody) {
+        if (params instanceof FormData) {
+            // Browser sets Content-Type automatically for FormData
+            fetchOptions.body = params;
+        } else if (isJsonBody) {
             // Send as text/plain to avoid OPTIONS preflight while carrying JSON
-            fetchOptions.headers = { 'Content-Type': 'text/plain' };
+            fetchOptions.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
             fetchOptions.body = JSON.stringify(params);
         } else {
             const form = new URLSearchParams();
@@ -133,24 +138,20 @@ export const api = {
     // Picture helpers
     postToUrl: (url: string, params: any) => apiRequest(url, 'POST', params),
     uploadPicture: async (file: File) => {
-        const reader = new FileReader();
-        return new Promise<ApiResponse>((resolve, reject) => {
-            reader.onload = async () => {
-                const base64 = (reader.result as string).split(',')[1];
-                try {
-                    // Send as text/plain JSON for maximum compatibility
-                    const res = await apiRequest(DOWNLOAD_API_URL, 'POST', {
-                        action: 'upload',
-                        filename: file.name,
-                        contentType: file.type,
-                        content: base64
-                    }, true); // true = isJsonBody
-                    resolve(res);
-                } catch (e) { reject(e); }
-            };
-            reader.onerror = () => reject(new Error('File reading failed'));
-            reader.readAsDataURL(file);
-        });
+        const formData = new FormData();
+        formData.append('myFile', file);
+        formData.append('action', 'upload');
+        formData.append('filename', file.name);
+        formData.append('contentType', file.type);
+
+        try {
+            // Using DOWNLOAD_API_URL which we updated to support FormData
+            const res = await apiRequest(DOWNLOAD_API_URL, 'POST', formData as any);
+            return res;
+        } catch (e) {
+            console.error('Upload Error:', e);
+            throw e;
+        }
     },
     addPictureMetadata: (userId: string, entryId: string, driveId: string, url: string) =>
         api.post({ action: 'addPictureMetadata', userId, entryId, driveId, url }),

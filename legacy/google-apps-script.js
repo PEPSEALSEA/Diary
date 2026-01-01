@@ -1,4 +1,22 @@
 const SHEET_ID = '1OYSzg0ybstarkDfxSZL9SA_gW6D5f8_icnqH7BLoblE';
+
+/**
+ * Helper to add CORS headers to a ContentService response.
+ * Ensures that all API endpoints are accessible from any origin.
+ */
+/**
+ * Helper to return a response with JSON mime type.
+ * Google Apps Script handles CORS (Access-Control-Allow-Origin: *) automatically 
+ * for ContentService responses when deployed as a Web App with access 'Anyone'.
+ */
+function addCorsHeaders(response) {
+  return response.setMimeType(ContentService.MimeType.JSON);
+}
+
+// OPTIONS preflight is avoided by using "simple requests" (text/plain or multipart/form-data)
+function doOptions(e) {
+  return ContentService.createTextOutput('').setMimeType(ContentService.MimeType.TEXT);
+}
 const USERS_SHEET_NAME = 'Users';
 const DIARY_ENTRIES_SHEET_NAME = 'DiaryEntries';
 const FRIENDS_SHEET_NAME = 'Friends';
@@ -101,124 +119,128 @@ function invalidateDiaryIndex(userId) {
 function doGet(e) {
   try {
     const action = e.parameter.action;
-
     if (action === 'getUserLinks') {
       const userId = e.parameter.userId;
-      return getUserLinks(userId);
+      return addCorsHeaders(getUserLinks(userId));
     } else if (action === 'listUserEntriesByDate') {
       const userId = e.parameter.userId;
       const date = e.parameter.date;
-      return listUserEntriesByDate(userId, date);
+      return addCorsHeaders(listUserEntriesByDate(userId, date));
     } else if (action === 'getDiaryEntry') {
       const username = e.parameter.username;
       const date = e.parameter.date;
       const viewerUserId = e.parameter.viewerUserId || '';
       const viewerEmail = e.parameter.viewerEmail || '';
-      return getDiaryEntry(username, date, viewerUserId, viewerEmail);
+      return addCorsHeaders(getDiaryEntry(username, date, viewerUserId, viewerEmail));
     } else if (action === 'getUserDiaryEntries') {
       const userId = e.parameter.userId;
-      const month = e.parameter.month; // Optional: YYYY-MM format
-      const year = e.parameter.year;   // Optional: YYYY format
-      return getUserDiaryEntries(userId, month, year);
+      const month = e.parameter.month;
+      const year = e.parameter.year;
+      return addCorsHeaders(getUserDiaryEntries(userId, month, year));
     } else if (action === 'getPublicDiaryEntries') {
-      const username = e.parameter.username; // Optional: filter by username
-      const date = e.parameter.date;         // Optional: filter by exact date
-      const month = e.parameter.month;       // Optional: YYYY-MM
-      const year = e.parameter.year;         // Optional: YYYY
-      const limit = e.parameter.limit;       // Optional: max items
-      const maxContent = e.parameter.maxContent; // Optional: trim content length
+      const username = e.parameter.username;
+      const date = e.parameter.date;
+      const month = e.parameter.month;
+      const year = e.parameter.year;
+      const limit = e.parameter.limit;
+      const maxContent = e.parameter.maxContent;
       const viewerUserId = e.parameter.viewerUserId || '';
       const viewerEmail = e.parameter.viewerEmail || '';
-      return getPublicDiaryEntries(username, date, month, year, limit, maxContent, viewerUserId, viewerEmail);
+      return addCorsHeaders(getPublicDiaryEntries(username, date, month, year, limit, maxContent, viewerUserId, viewerEmail));
     } else if (action === 'listFriends') {
       const ownerId = e.parameter.ownerId;
-      return listFriends(ownerId);
+      return addCorsHeaders(listFriends(ownerId));
     } else if (action === 'getUserDiaryEntry') {
       const userId = e.parameter.userId;
       const date = e.parameter.date;
-      return getUserDiaryEntry(userId, date);
+      return addCorsHeaders(getUserDiaryEntry(userId, date));
     } else if (action === 'getEmailByUsername') {
       const username = e.parameter.username;
-      return getEmailByUsername(username);
+      return addCorsHeaders(getEmailByUsername(username));
     } else if (action === 'getProfile') {
       const username = e.parameter.username;
       const viewerUserId = e.parameter.viewerUserId || '';
-      return getProfile(username, viewerUserId);
+      return addCorsHeaders(getProfile(username, viewerUserId));
     } else if (action === 'listFriendRequests') {
-      return listFriendRequests(e.parameter.userId);
+      return addCorsHeaders(listFriendRequests(e.parameter.userId));
     } else if (action === 'searchUsers') {
-      return searchUsers(e.parameter.query);
+      return addCorsHeaders(searchUsers(e.parameter.query));
     } else if (action === 'getFriendships') {
-      return getFriendships(e.parameter.userId);
+      return addCorsHeaders(getFriendships(e.parameter.userId));
     } else if (action === 'getEntryPictures') {
-      return handleGetPictures(e.parameter.entryId);
+      return addCorsHeaders(handleGetPictures(e.parameter.entryId));
     }
-
-
-    return ContentService
+    return addCorsHeaders(ContentService
       .createTextOutput(JSON.stringify({ success: false, error: 'Invalid request' }))
-      .setMimeType(ContentService.MimeType.JSON);
-
+      .setMimeType(ContentService.MimeType.JSON));
   } catch (error) {
     Logger.log('Error in doGet: ' + error.toString());
-    return ContentService
+    return addCorsHeaders(ContentService
       .createTextOutput(JSON.stringify({ success: false, error: 'Server error' }))
-      .setMimeType(ContentService.MimeType.JSON);
+      .setMimeType(ContentService.MimeType.JSON));
   }
 }
 
 function doPost(e) {
   try {
-    const action = e.parameter.action;
+    const params = e.parameter || {};
+    let postData = {};
+    if (e.postData && e.postData.contents) {
+      try {
+        postData = JSON.parse(e.postData.contents);
+      } catch (ex) { }
+    }
+
+    const action = params.action || postData.action;
 
     if (action === 'register') {
-      return handleRegister(e.parameter);
+      return handleRegister(Object.assign({}, params, postData));
     } else if (action === 'login') {
-      return handleLogin(e.parameter);
+      return handleLogin(Object.assign({}, params, postData));
     } else if (action === 'googleLogin') {
-      return handleGoogleLogin(e.parameter);
+      return handleGoogleLogin(Object.assign({}, params, postData));
     } else if (action === 'googleRegister') {
-      return handleGoogleRegister(e.parameter);
+      return handleGoogleRegister(Object.assign({}, params, postData));
     } else if (action === 'saveDiaryEntry') {
-      return saveDiaryEntry(e.parameter);
+      return saveDiaryEntry(Object.assign({}, params, postData));
     } else if (action === 'updateDiaryEntry') {
-      return updateDiaryEntry(e.parameter);
+      return updateDiaryEntry(Object.assign({}, params, postData));
     } else if (action === 'updateDiaryEntryById') {
-      return updateDiaryEntryById(e.parameter);
+      return updateDiaryEntryById(Object.assign({}, params, postData));
     } else if (action === 'deleteDiaryEntry') {
-      return deleteDiaryEntry(e.parameter);
+      return deleteDiaryEntry(Object.assign({}, params, postData));
     } else if (action === 'deleteDiaryEntryById') {
-      return deleteDiaryEntryById(e.parameter);
+      return deleteDiaryEntryById(Object.assign({}, params, postData));
     } else if (action === 'toggleDiaryPrivacy') {
-      return toggleDiaryPrivacy(e.parameter);
+      return addCorsHeaders(toggleDiaryPrivacy(Object.assign({}, params, postData)));
     } else if (action === 'addFriend') {
-      return sendFriendRequest(e.parameter);
+      return addCorsHeaders(sendFriendRequest(Object.assign({}, params, postData)));
     } else if (action === 'acceptFriendRequest') {
-      return acceptFriendRequest(e.parameter);
+      return addCorsHeaders(acceptFriendRequest(Object.assign({}, params, postData)));
     } else if (action === 'declineFriendRequest') {
-      return declineFriendRequest(e.parameter);
+      return addCorsHeaders(declineFriendRequest(Object.assign({}, params, postData)));
     } else if (action === 'removeFriend') {
-      return removeFriend(e.parameter);
+      return addCorsHeaders(removeFriend(Object.assign({}, params, postData)));
     } else if (action === 'ping') {
-      return ping(e.parameter);
+      return addCorsHeaders(ping(Object.assign({}, params, postData)));
     } else if (action === 'addPictureMetadata') {
-      return handlePictureMetadata(e.parameter);
+      return addCorsHeaders(handlePictureMetadata(Object.assign({}, params, postData)));
     } else if (action === 'deletePicture') {
-      return handleDeletePicture(e.parameter);
+      return addCorsHeaders(handleDeletePicture(Object.assign({}, params, postData)));
     } else if (action === 'setupSheets') {
       return setupSheets();
     }
 
 
-    return ContentService
+    return addCorsHeaders(ContentService
       .createTextOutput(JSON.stringify({ success: false, error: 'Invalid request' }))
-      .setMimeType(ContentService.MimeType.JSON);
+      .setMimeType(ContentService.MimeType.JSON));
 
   } catch (error) {
     Logger.log('Error in doPost: ' + error.toString());
-    return ContentService
-      .createTextOutput(JSON.stringify({ success: false, error: 'Server error' }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return addCorsHeaders(ContentService
+      .createTextOutput(JSON.stringify({ success: false, error: 'Invalid request' }))
+      .setMimeType(ContentService.MimeType.JSON));
   }
 }
 
@@ -753,22 +775,16 @@ function getDiaryEntry(username, date, viewerUserId, viewerEmail) {
     if (!username || !date) {
       return createResponse(false, 'Username and date are required');
     }
-
     if (!isValidDate(date)) {
       return createResponse(false, 'Invalid date format. Use YYYY-MM-DD');
     }
-
     const cacheKey = 'pub:entry:' + String(username || '').trim().toLowerCase() + ':' + date + ':' + (viewerUserId || '') + ':' + (viewerEmail || '');
     const cached = cacheGetJson(cacheKey);
     if (cached) {
-      return ContentService
-        .createTextOutput(JSON.stringify(cached))
-        .setMimeType(ContentService.MimeType.JSON);
+      return ContentService.createTextOutput(JSON.stringify(cached)).setMimeType(ContentService.MimeType.JSON);
     }
-
     const data = getOrCreateDiaryEntriesSheet().getDataRange().getValues();
     const reqUser = String(username || '').trim().toLowerCase();
-
     for (let i = 1; i < data.length; i++) {
       const rowDate = normalizeDateCell(data[i][3]);
       const rowUsername = String(data[i][2] || '').trim().toLowerCase();
@@ -778,7 +794,6 @@ function getDiaryEntry(username, date, viewerUserId, viewerEmail) {
         if (!canViewEntry(ownerId, viewerUserId || '', privacy, viewerEmail || '')) {
           return createResponse(false, 'Not found or not authorized');
         }
-
         const resp = {
           success: true,
           message: 'Diary entry found',
@@ -793,14 +808,10 @@ function getDiaryEntry(username, date, viewerUserId, viewerEmail) {
           }
         };
         cachePutJson(cacheKey, resp, 60);
-        return ContentService
-          .createTextOutput(JSON.stringify(resp))
-          .setMimeType(ContentService.MimeType.JSON);
+        return ContentService.createTextOutput(JSON.stringify(resp)).setMimeType(ContentService.MimeType.JSON);
       }
     }
-
     return createResponse(false, 'Diary entry not found');
-
   } catch (error) {
     Logger.log('Error in getDiaryEntry: ' + error.toString());
     return createResponse(false, 'Failed to retrieve diary entry');
@@ -812,26 +823,18 @@ function getUserDiaryEntries(userId, month, year) {
     if (!userId) {
       return createResponse(false, 'User ID is required');
     }
-
     const cacheKey = 'user:entries:' + userId + ':' + (month || '') + ':' + (year || '');
     const cached = cacheGetJson(cacheKey);
     if (cached) {
-      return ContentService
-        .createTextOutput(JSON.stringify(cached))
-        .setMimeType(ContentService.MimeType.JSON);
+      return ContentService.createTextOutput(JSON.stringify(cached)).setMimeType(ContentService.MimeType.JSON);
     }
-
     const data = getOrCreateDiaryEntriesSheet().getDataRange().getValues();
     const userEntries = [];
-
     for (let i = 1; i < data.length; i++) {
       if (data[i][1] === userId) {
         const entryDate = normalizeDateCell(data[i][3]);
-
-        // Filter by month/year if provided
         if (month && !entryDate.startsWith(month)) continue;
         if (year && !entryDate.startsWith(year)) continue;
-
         userEntries.push({
           entryId: data[i][0],
           date: entryDate,
@@ -843,10 +846,7 @@ function getUserDiaryEntries(userId, month, year) {
         });
       }
     }
-
-    // Sort by date (newest first)
     userEntries.sort((a, b) => new Date(b.date) - new Date(a.date));
-
     const resp = {
       success: true,
       message: 'Diary entries retrieved successfully',
@@ -854,10 +854,7 @@ function getUserDiaryEntries(userId, month, year) {
       total: userEntries.length
     };
     cachePutJson(cacheKey, resp, 30);
-    return ContentService
-      .createTextOutput(JSON.stringify(resp))
-      .setMimeType(ContentService.MimeType.JSON);
-
+    return ContentService.createTextOutput(JSON.stringify(resp)).setMimeType(ContentService.MimeType.JSON);
   } catch (error) {
     Logger.log('Error in getUserDiaryEntries: ' + error.toString());
     return createResponse(false, 'Failed to retrieve diary entries');
@@ -875,11 +872,8 @@ function getPublicDiaryEntries(username, date, month, year, limit, maxContent, v
       + (maxContent || '') + ':' + (viewerUserId || '') + ':' + (viewerEmail || '');
     const cached = cacheGetJson(cacheKey);
     if (cached) {
-      return ContentService
-        .createTextOutput(JSON.stringify(cached))
-        .setMimeType(ContentService.MimeType.JSON);
+      return ContentService.createTextOutput(JSON.stringify(cached)).setMimeType(ContentService.MimeType.JSON);
     }
-
     const data = getOrCreateDiaryEntriesSheet().getDataRange().getValues();
     const publicEntries = [];
     const reqUser = username ? String(username || '').trim().toLowerCase() : '';
@@ -887,29 +881,19 @@ function getPublicDiaryEntries(username, date, month, year, limit, maxContent, v
     const reqYear = year || '';
     const maxLen = maxContent ? parseInt(maxContent, 10) : null;
     const maxItems = limit ? parseInt(limit, 10) : null;
-
     for (let i = 1; i < data.length; i++) {
       const ownerId = data[i][1];
       const privacy = normalizePrivacy(data[i][6], null);
-
-      // Enforce access
       if (!canViewEntry(ownerId, viewerUserId || '', privacy, viewerEmail || '')) continue;
-
-      // Filter by username if provided
       if (reqUser && String(data[i][2] || '').trim().toLowerCase() !== reqUser) continue;
-
-      // Filter by date if provided
       const rowDate = normalizeDateCell(data[i][3]);
       if (date && rowDate !== date) continue;
-      // Filter by month/year if provided
       if (reqMonth && !rowDate.startsWith(reqMonth)) continue;
       if (reqYear && !rowDate.startsWith(reqYear)) continue;
-
       let content = data[i][5];
       if (typeof content === 'string' && maxLen && maxLen > 0 && content.length > maxLen) {
         content = content.slice(0, maxLen) + '…';
       }
-
       publicEntries.push({
         username: data[i][2],
         date: rowDate,
@@ -920,11 +904,8 @@ function getPublicDiaryEntries(username, date, month, year, limit, maxContent, v
         lastModified: data[i][8]
       });
     }
-
-    // Sort by date (newest first)
     publicEntries.sort((a, b) => new Date(b.date) - new Date(a.date));
     const limited = (maxItems && maxItems > 0) ? publicEntries.slice(0, maxItems) : publicEntries;
-
     const resp = {
       success: true,
       message: 'Public diary entries retrieved successfully',
@@ -932,10 +913,7 @@ function getPublicDiaryEntries(username, date, month, year, limit, maxContent, v
       total: publicEntries.length
     };
     cachePutJson(cacheKey, resp, 60);
-    return ContentService
-      .createTextOutput(JSON.stringify(resp))
-      .setMimeType(ContentService.MimeType.JSON);
-
+    return ContentService.createTextOutput(JSON.stringify(resp)).setMimeType(ContentService.MimeType.JSON);
   } catch (error) {
     Logger.log('Error in getPublicDiaryEntries: ' + error.toString());
     return createResponse(false, 'Failed to retrieve public diary entries');
@@ -950,17 +928,12 @@ function getUserDiaryEntry(userId, date) {
     if (!isValidDate(date)) {
       return createResponse(false, 'Invalid date format. Use YYYY-MM-DD');
     }
-
     const cacheKey = 'user:entry:' + userId + ':' + date;
     const cached = cacheGetJson(cacheKey);
     if (cached) {
-      return ContentService
-        .createTextOutput(JSON.stringify(cached))
-        .setMimeType(ContentService.MimeType.JSON);
+      return ContentService.createTextOutput(JSON.stringify(cached)).setMimeType(ContentService.MimeType.JSON);
     }
-
     const data = getOrCreateDiaryEntriesSheet().getDataRange().getValues();
-
     for (let i = 1; i < data.length; i++) {
       if (data[i][1] === userId && normalizeDateCell(data[i][3]) === date) {
         const resp = {
@@ -979,12 +952,9 @@ function getUserDiaryEntry(userId, date) {
           }
         };
         cachePutJson(cacheKey, resp, 30);
-        return ContentService
-          .createTextOutput(JSON.stringify(resp))
-          .setMimeType(ContentService.MimeType.JSON);
+        return ContentService.createTextOutput(JSON.stringify(resp)).setMimeType(ContentService.MimeType.JSON);
       }
     }
-
     return createResponse(false, 'Diary entry not found');
   } catch (error) {
     Logger.log('Error in getUserDiaryEntry: ' + error.toString());
