@@ -122,9 +122,9 @@ export interface FriendRequest {
 
 export const api = {
     get: (params: any) => apiRequest(API_URL, 'GET', params),
-    post: (params: any) => apiRequest(API_URL, 'POST', params),
+    post: (params: any) => apiRequest(API_URL, 'POST', params, true),
     otpGet: (params: any) => apiRequest(OTP_API_URL, 'GET', params),
-    otpPost: (params: any) => apiRequest(OTP_API_URL, 'POST', params),
+    otpPost: (params: any) => apiRequest(OTP_API_URL, 'POST', params, true),
 
     // Friend helpers
     addFriend: (fromId: string, toIdentifier: string) => api.post({ action: 'addFriend', fromId, toIdentifier }),

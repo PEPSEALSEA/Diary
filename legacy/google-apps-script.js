@@ -10,6 +10,8 @@ const SHEET_ID = '1OYSzg0ybstarkDfxSZL9SA_gW6D5f8_icnqH7BLoblE';
  * for ContentService responses when deployed as a Web App with access 'Anyone'.
  */
 function addCorsHeaders(response) {
+  // Google Apps Script handles Access-Control-Allow-Origin: * automatically
+  // for ContentService responses when deployed as a Web App to 'Anyone'.
   return response.setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -183,63 +185,80 @@ function doGet(e) {
 
 function doPost(e) {
   try {
-    const params = e.parameter || {};
-    let postData = {};
+    // 1. Gather URL parameters
+    const urlParams = e.parameter || {};
+
+    // 2. Gather body parameters
+    let bodyData = {};
     if (e.postData && e.postData.contents) {
+      const contents = e.postData.contents;
       try {
-        postData = JSON.parse(e.postData.contents);
-      } catch (ex) { }
+        // Try parsing as JSON first
+        bodyData = JSON.parse(contents);
+      } catch (ex) {
+        // Fallback: Try parsing as URL-encoded if it's not JSON
+        try {
+          contents.split('&').forEach(function (part) {
+            const item = part.split('=');
+            if (item.length === 2) {
+              bodyData[decodeURIComponent(item[0])] = decodeURIComponent(item[1]);
+            }
+          });
+        } catch (ex2) { }
+      }
     }
 
-    const action = params.action || postData.action;
+    // 3. Merge all parameters (body takes precedence over URL)
+    const combinedParams = Object.assign({}, urlParams, bodyData);
+    const action = combinedParams.action;
 
+    // Route actions
     if (action === 'register') {
-      return handleRegister(Object.assign({}, params, postData));
+      return handleRegister(combinedParams);
     } else if (action === 'login') {
-      return handleLogin(Object.assign({}, params, postData));
+      return handleLogin(combinedParams);
     } else if (action === 'googleLogin') {
-      return handleGoogleLogin(Object.assign({}, params, postData));
+      return handleGoogleLogin(combinedParams);
     } else if (action === 'googleRegister') {
-      return handleGoogleRegister(Object.assign({}, params, postData));
+      return handleGoogleRegister(combinedParams);
     } else if (action === 'saveDiaryEntry') {
-      return saveDiaryEntry(Object.assign({}, params, postData));
+      return saveDiaryEntry(combinedParams);
     } else if (action === 'updateDiaryEntry') {
-      return updateDiaryEntry(Object.assign({}, params, postData));
+      return updateDiaryEntry(combinedParams);
     } else if (action === 'updateDiaryEntryById') {
-      return updateDiaryEntryById(Object.assign({}, params, postData));
+      return updateDiaryEntryById(combinedParams);
     } else if (action === 'deleteDiaryEntry') {
-      return deleteDiaryEntry(Object.assign({}, params, postData));
+      return deleteDiaryEntry(combinedParams);
     } else if (action === 'deleteDiaryEntryById') {
-      return deleteDiaryEntryById(Object.assign({}, params, postData));
+      return deleteDiaryEntryById(combinedParams);
     } else if (action === 'toggleDiaryPrivacy') {
-      return addCorsHeaders(toggleDiaryPrivacy(Object.assign({}, params, postData)));
+      return addCorsHeaders(toggleDiaryPrivacy(combinedParams));
     } else if (action === 'addFriend') {
-      return addCorsHeaders(sendFriendRequest(Object.assign({}, params, postData)));
+      return addCorsHeaders(sendFriendRequest(combinedParams));
     } else if (action === 'acceptFriendRequest') {
-      return addCorsHeaders(acceptFriendRequest(Object.assign({}, params, postData)));
+      return addCorsHeaders(acceptFriendRequest(combinedParams));
     } else if (action === 'declineFriendRequest') {
-      return addCorsHeaders(declineFriendRequest(Object.assign({}, params, postData)));
+      return addCorsHeaders(declineFriendRequest(combinedParams));
     } else if (action === 'removeFriend') {
-      return addCorsHeaders(removeFriend(Object.assign({}, params, postData)));
+      return addCorsHeaders(removeFriend(combinedParams));
     } else if (action === 'ping') {
-      return addCorsHeaders(ping(Object.assign({}, params, postData)));
+      return addCorsHeaders(ping(combinedParams));
     } else if (action === 'addPictureMetadata') {
-      return addCorsHeaders(handlePictureMetadata(Object.assign({}, params, postData)));
+      return addCorsHeaders(handlePictureMetadata(combinedParams));
     } else if (action === 'deletePicture') {
-      return addCorsHeaders(handleDeletePicture(Object.assign({}, params, postData)));
+      return addCorsHeaders(handleDeletePicture(combinedParams));
     } else if (action === 'setupSheets') {
       return setupSheets();
     }
 
-
     return addCorsHeaders(ContentService
-      .createTextOutput(JSON.stringify({ success: false, error: 'Invalid request' }))
+      .createTextOutput(JSON.stringify({ success: false, error: 'Invalid request: ' + (action || 'none') }))
       .setMimeType(ContentService.MimeType.JSON));
 
   } catch (error) {
     Logger.log('Error in doPost: ' + error.toString());
     return addCorsHeaders(ContentService
-      .createTextOutput(JSON.stringify({ success: false, error: 'Invalid request' }))
+      .createTextOutput(JSON.stringify({ success: false, error: 'Server error: ' + error.message }))
       .setMimeType(ContentService.MimeType.JSON));
   }
 }
@@ -1279,9 +1298,7 @@ function createResponse(success, message, data) {
     response.error = message;
   }
 
-  return ContentService
-    .createTextOutput(JSON.stringify(response))
-    .setMimeType(ContentService.MimeType.JSON);
+  return addCorsHeaders(ContentService.createTextOutput(JSON.stringify(response)));
 }
 
 // ===== UTILITY FUNCTIONS (Keeping your existing ones) =====
