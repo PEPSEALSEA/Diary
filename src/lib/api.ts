@@ -143,7 +143,7 @@ export const api = {
     // Picture helpers
     postToUrl: (url: string, params: any) => apiRequest(url, 'POST', params),
     uploadPicture: async (file: File) => {
-        return new Promise((resolve, reject) => {
+        return new Promise<ApiResponse>((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = async () => {
                 try {
