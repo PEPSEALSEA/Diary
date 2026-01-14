@@ -67,13 +67,13 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
     }, [date, entriesData]); // entriesData change means we fetched new list
 
     const loadIntoForm = (entry: DiaryEntry) => {
-        setTitle(String(entry.title || ''));
-        setContent(String(entry.content || ''));
+        setTitle(entry.title || '');
+        setContent(entry.content || '');
         setPrivacy(normalizePrivacy(entry.privacy, entry.isPrivate));
         setEntryId(entry.entryId || null);
         lastSavedDiff.current = {
-            title: String(entry.title || ''),
-            content: String(entry.content || ''),
+            title: entry.title || '',
+            content: entry.content || '',
             privacy: normalizePrivacy(entry.privacy, entry.isPrivate),
             date: entry.date
         };
