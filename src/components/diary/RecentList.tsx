@@ -45,7 +45,7 @@ export default function RecentList({ user, refreshTrigger }: RecentListProps) {
                             {toDisplayDate(e.date)} — {e.title || 'Untitled'}
                         </Link>
                         <div className="helper truncate">
-                            {e.content?.slice(0, 100) || 'No content'}
+                            {String(e.content || '').slice(0, 100) || 'No content'}
                         </div>
                     </div>
                 ))}
