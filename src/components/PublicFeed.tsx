@@ -33,8 +33,8 @@ export default function PublicFeed() {
                         {e.title || 'Untitled'}
                     </Link>
                     <div style={{ lineHeight: 1.5 }}>
-                        {e.content?.slice(0, 200)}
-                        {(e.content?.length || 0) > 200 && '...'}
+                        {String(e.content || '').slice(0, 200)}
+                        {String(e.content || '').length > 200 && '...'}
                     </div>
                 </div>
             ))}
