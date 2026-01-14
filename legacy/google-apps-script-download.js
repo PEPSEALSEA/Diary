@@ -22,12 +22,12 @@ function doPost(e) {
     hasContents: !!(e.postData && e.postData.contents),
     contentsType: e.postData && e.postData.contents ? typeof e.postData.contents : null
   };
-  
+
   try {
     var params = e.parameter || {};
     var postData = {};
     var isMultipart = false;
-    
+
     // Check for multipart in multiple ways
     if (e.postData) {
       if (e.postData.type && (e.postData.type.indexOf('multipart') !== -1 || e.postData.type.indexOf('form-data') !== -1)) {
@@ -46,14 +46,13 @@ function doPost(e) {
         }
       }
     }
-    
+
     if (e.postData && e.postData.contents) {
       try {
         postData = JSON.parse(e.postData.contents);
       } catch (ex) {
-        // Not JSON - if we haven't detected multipart yet, check contents
+        // Not JSON
         if (!isMultipart && typeof e.postData.contents !== 'string') {
-          // If contents is not a string and not JSON, likely multipart blob
           if (e.postData.contents.getBytes) {
             isMultipart = true;
           }
@@ -61,7 +60,40 @@ function doPost(e) {
       }
     }
 
+    // Special handling for text-only base64 upload (CORS friendly)
+    // If request body is a plain string and action is in URL
     var action = params.action || postData.action;
+
+    // Check if this is a raw text body upload (simple request)
+    if (action === 'upload' && e.postData && e.postData.contents && typeof e.postData.contents === 'string' && !isMultipart && !postData.action) {
+      // This is likely our new base64 upload
+      var base64Content = e.postData.contents;
+      // Strip data URL prefix if present (though frontend should strip it)
+      if (base64Content.indexOf('base64,') !== -1) {
+        base64Content = base64Content.split('base64,')[1];
+      }
+
+      var filename = params.filename || ("Image_" + new Date().getTime() + ".jpg");
+      var contentType = params.contentType || "image/jpeg";
+
+      try {
+        const decodedData = Utilities.base64Decode(base64Content);
+        const blob = Utilities.newBlob(decodedData, contentType, filename);
+
+        const folder = DriveApp.getFolderById(folderId);
+        const file = folder.createFile(blob);
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+        return createResponse(true, 'Upload successful (text-mode)', {
+          driveId: file.getId(),
+          url: 'https://lh3.googleusercontent.com/u/0/d/' + file.getId(),
+          downloadUrl: file.getDownloadUrl(),
+          viewUrl: file.getUrl()
+        });
+      } catch (e) {
+        return createResponse(false, 'Text-mode upload failed: ' + e.toString());
+      }
+    }
 
     // Handle FormData upload (multipart/form-data)
     // Google Apps Script automatically parses multipart/form-data into e.parameters
@@ -73,7 +105,7 @@ function doPost(e) {
       } else if (e.parameters.myFile && !Array.isArray(e.parameters.myFile)) {
         fileBlob = e.parameters.myFile;
       }
-      
+
       if (fileBlob) {
         const filename = params.filename || (fileBlob.getName ? fileBlob.getName() : null) || ("Image_" + new Date().getTime());
         const contentType = params.contentType || (fileBlob.getContentType ? fileBlob.getContentType() : null) || "image/jpeg";
@@ -94,8 +126,8 @@ function doPost(e) {
 
     // Fallback: Handle multipart/form-data manually if e.parameters didn't work
     // Also try if we have postData.contents that looks like a blob (even if multipart not detected)
-    if (isMultipart || (e.postData && e.postData.type && e.postData.type.indexOf('multipart') !== -1) || 
-        (e.postData && e.postData.contents && e.postData.contents.getBytes && action === 'upload')) {
+    if (isMultipart || (e.postData && e.postData.type && e.postData.type.indexOf('multipart') !== -1) ||
+      (e.postData && e.postData.contents && e.postData.contents.getBytes && action === 'upload')) {
       var fileBlob = null;
       var filename = params.filename || ("Image_" + new Date().getTime() + ".jpg");
       var contentType = params.contentType || "image/jpeg";
@@ -112,7 +144,7 @@ function doPost(e) {
             if (blobType && blobType !== 'application/octet-stream') {
               contentType = blobType;
             }
-          } catch (ex) {}
+          } catch (ex) { }
         } else if (typeof e.postData.contents === 'string') {
           // It's a string - try to extract file from multipart string
           var contentTypeHeader = e.postData.type || 'multipart/form-data';
@@ -178,12 +210,12 @@ function doPost(e) {
             var fileBlob = Array.isArray(paramValue) ? paramValue[0] : paramValue;
             var filename = params.filename || (fileBlob.getName ? fileBlob.getName() : null) || ("Image_" + new Date().getTime());
             var contentType = params.contentType || (fileBlob.getContentType ? fileBlob.getContentType() : null) || "image/jpeg";
-            
+
             const folder = DriveApp.getFolderById(folderId);
             const file = folder.createFile(fileBlob);
             if (filename) file.setName(filename);
             file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-            
+
             return createResponse(true, 'Upload successful', {
               driveId: file.getId(),
               url: 'https://lh3.googleusercontent.com/u/0/d/' + file.getId(),
@@ -194,7 +226,7 @@ function doPost(e) {
         }
       }
     }
-    
+
     // Final fallback: if we have postData.contents as blob and action=upload, try using it directly
     // This handles cases where Google Apps Script received the file but didn't parse it into parameters
     if (action === 'upload' && e.postData && e.postData.contents && e.postData.contents.getBytes) {
@@ -202,20 +234,20 @@ function doPost(e) {
         var fileBlob = e.postData.contents;
         var filename = params.filename || ("Image_" + new Date().getTime() + ".jpg");
         var contentType = params.contentType || "image/jpeg";
-        
+
         // Try to get content type from blob
         try {
           var blobType = fileBlob.getContentType();
           if (blobType && blobType !== 'application/octet-stream') {
             contentType = blobType;
           }
-        } catch (ex) {}
-        
+        } catch (ex) { }
+
         const folder = DriveApp.getFolderById(folderId);
         const file = folder.createFile(fileBlob);
         if (filename) file.setName(filename);
         file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-        
+
         return createResponse(true, 'Upload successful', {
           driveId: file.getId(),
           url: 'https://lh3.googleusercontent.com/u/0/d/' + file.getId(),
@@ -226,7 +258,7 @@ function doPost(e) {
         Logger.log('Error using postData.contents directly: ' + ex.toString());
       }
     }
-    
+
     return createResponse(false, 'Invalid action or missing file. Action: ' + (action || 'none') + ', isMultipart: ' + isMultipart + ', has parameters.myFile: ' + (e.parameters && e.parameters.myFile ? 'yes' : 'no') + ', Debug: ' + JSON.stringify(debugInfo));
   } catch (error) {
     return createResponse(false, 'Upload failed: ' + error.toString() + '. Stack: ' + (error.stack || 'no stack') + ', Debug: ' + JSON.stringify(debugInfo));
