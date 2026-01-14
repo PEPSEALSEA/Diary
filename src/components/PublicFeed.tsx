@@ -33,11 +33,22 @@ export default function PublicFeed() {
                         {e.title || 'Untitled'}
                     </Link>
                     <div style={{ lineHeight: 1.5 }}>
-                        {String(e.content || '').slice(0, 200)}
-                        {String(e.content || '').length > 200 && '...'}
+                        <div style={{ lineHeight: 1.5 }}>
+                            {e.pictures && e.pictures.length > 0 && (
+                                <div className="card" style={{ padding: 4, width: '100%', height: 200, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', backgroundColor: 'var(--card-bg)' }}>
+                                    <img src={e.pictures[0]} alt="Entry attachment" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    {e.pictures.length > 1 && (
+                                        <div style={{ position: 'absolute', bottom: 8, right: 8, background: 'rgba(0,0,0,0.6)', color: '#fff', padding: '2px 8px', borderRadius: 12, fontSize: 12 }}>
+                                            +{e.pictures.length - 1} more
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            {String(e.content || '').slice(0, 200)}
+                            {String(e.content || '').length > 200 && '...'}
+                        </div>
                     </div>
-                </div>
             ))}
-        </div>
-    );
+                </div>
+            );
 }

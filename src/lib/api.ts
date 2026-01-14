@@ -44,6 +44,7 @@ export interface DiaryEntry {
     created?: string;
     lastModified?: string;
     username?: string;
+    pictures?: string[];
 }
 
 export interface ApiResponse<T = any> {

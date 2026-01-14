@@ -894,6 +894,20 @@ function getPublicDiaryEntries(username, date, month, year, limit, maxContent, v
       return ContentService.createTextOutput(JSON.stringify(cached)).setMimeType(ContentService.MimeType.JSON);
     }
     const data = getOrCreateDiaryEntriesSheet().getDataRange().getValues();
+
+    // Fetch pictures to attach
+    const picSheet = getOrCreatePicturesSheet();
+    const picData = picSheet.getDataRange().getValues();
+    const picMap = {};
+    for (let p = 1; p < picData.length; p++) {
+      const pEntryId = picData[p][2];
+      const pUrl = picData[p][4];
+      if (pEntryId && pUrl) {
+        if (!picMap[pEntryId]) picMap[pEntryId] = [];
+        picMap[pEntryId].push(pUrl);
+      }
+    }
+
     const publicEntries = [];
     const reqUser = username ? String(username || '').trim().toLowerCase() : '';
     const reqMonth = month || '';
@@ -914,13 +928,15 @@ function getPublicDiaryEntries(username, date, month, year, limit, maxContent, v
         content = content.slice(0, maxLen) + '…';
       }
       publicEntries.push({
+        entryId: data[i][0],
         username: data[i][2],
         date: rowDate,
         title: data[i][4],
         content: content,
         privacy: privacy,
         created: data[i][7],
-        lastModified: data[i][8]
+        lastModified: data[i][8],
+        pictures: picMap[data[i][0]] || []
       });
     }
     publicEntries.sort((a, b) => new Date(b.date) - new Date(a.date));
