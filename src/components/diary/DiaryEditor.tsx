@@ -24,6 +24,8 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
+import ImageViewer from '../ImageViewer';
+
 interface DiaryEditorProps {
     user: User;
     onEntryChange: () => void;
@@ -31,7 +33,7 @@ interface DiaryEditorProps {
     refreshTrigger?: number;
 }
 
-function SortablePicture({ picture, onDelete }: { picture: any, onDelete: (id: string) => void }) {
+function SortablePicture({ picture, onDelete, onView }: { picture: any, onDelete: (id: string) => void, onView: () => void }) {
     const {
         attributes,
         listeners,
@@ -55,7 +57,14 @@ function SortablePicture({ picture, onDelete }: { picture: any, onDelete: (id: s
     };
 
     return (
-        <div ref={setNodeRef} style={style} {...attributes} {...listeners} className="card">
+        <div
+            ref={setNodeRef}
+            style={style}
+            {...attributes}
+            {...listeners}
+            className="card"
+            onClick={onView}
+        >
             <img src={picture.url} alt="Diary" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'cover', pointerEvents: 'none' }} />
             <button
                 onPointerDown={(e) => e.stopPropagation()}
@@ -82,13 +91,24 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
     const [pictures, setPictures] = useState<any[]>([]);
     const [uploading, setUploading] = useState(false);
 
+    const [viewer, setViewer] = useState<{ isOpen: boolean, images: string[], index: number }>({ isOpen: false, images: [], index: 0 });
+
+    const openViewer = (images: string[], index: number) => {
+        setViewer({ isOpen: true, images, index });
+    };
+
+    const closeViewer = () => setViewer(prev => ({ ...prev, isOpen: false }));
 
     const [loading, setLoading] = useState(false);
     const [isDirty, setIsDirty] = useState(false);
     const [editMode, setEditMode] = useState(true); // Default to edit mode for simplicity or mimic old app
 
     const sensors = useSensors(
-        useSensor(PointerSensor),
+        useSensor(PointerSensor, {
+            activationConstraint: {
+                distance: 8,
+            },
+        }),
         useSensor(KeyboardSensor, {
             coordinateGetter: sortableKeyboardCoordinates,
         })
@@ -407,6 +427,12 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
     return (
         <div className="card" style={{ position: 'relative' }}>
             {(loading || (loadingEntries && allEntries.length === 0)) && <LoadingOverlay message={loading ? "Working..." : "Loading diary..."} />}
+            <ImageViewer
+                isOpen={viewer.isOpen}
+                images={viewer.images}
+                initialIndex={viewer.index}
+                onClose={closeViewer}
+            />
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
                 <div className="helper">Editor</div>
                 <div className="entry-status code" style={{ color: isDirty ? 'var(--accent-2)' : 'var(--muted)' }}>
@@ -460,8 +486,13 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
                         items={pictures.map(p => p.pictureId)}
                         strategy={rectSortingStrategy}
                     >
-                        {pictures.map(p => (
-                            <SortablePicture key={p.pictureId} picture={p} onDelete={handleDeletePicture} />
+                        {pictures.map((p, idx) => (
+                            <SortablePicture
+                                key={p.pictureId}
+                                picture={p}
+                                onDelete={handleDeletePicture}
+                                onView={() => openViewer(pictures.map(x => x.url), idx)}
+                            />
                         ))}
                     </SortableContext>
                 </DndContext>

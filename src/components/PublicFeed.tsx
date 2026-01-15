@@ -5,14 +5,29 @@ import { DiaryEntry, toDisplayDate, ApiResponse } from '@/lib/api';
 import Link from 'next/link';
 import LoadingOverlay from './LoadingOverlay';
 import { useCachedQuery } from '@/hooks/useCachedQuery';
+import ImageViewer from './ImageViewer';
 
 export default function PublicFeed() {
     const { data, loading, validating } = useCachedQuery<ApiResponse>('public_feed', { action: 'getPublicDiaryEntries', limit: 50 });
 
     const entries = data?.entries || [];
 
+    const [viewer, setViewer] = React.useState<{ isOpen: boolean, images: string[], index: number }>({ isOpen: false, images: [], index: 0 });
+
+    const openViewer = (images: string[], index: number = 0) => {
+        setViewer({ isOpen: true, images, index });
+    };
+
+    const closeViewer = () => setViewer(prev => ({ ...prev, isOpen: false }));
+
     return (
         <div className="card" style={{ position: 'relative', minHeight: 200 }}>
+            <ImageViewer
+                isOpen={viewer.isOpen}
+                images={viewer.images}
+                initialIndex={viewer.index}
+                onClose={closeViewer}
+            />
             {loading && <LoadingOverlay message="Loading feed..." />}
             {/* Optional: Indicator for background update */}
             {validating && !loading && (
@@ -34,7 +49,11 @@ export default function PublicFeed() {
                     </Link>
                     <div style={{ lineHeight: 1.5 }}>
                         {e.pictures && e.pictures.length > 0 && (
-                            <div className="card" style={{ padding: 4, width: '100%', height: 200, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', backgroundColor: 'var(--card-bg)' }}>
+                            <div
+                                className="card"
+                                style={{ padding: 4, width: '100%', height: 200, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', backgroundColor: 'var(--card-bg)', cursor: 'pointer' }}
+                                onClick={() => openViewer(e.pictures || [], 0)}
+                            >
                                 <img src={e.pictures[0]} alt="Entry attachment" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                 {e.pictures.length > 1 && (
                                     <div style={{ position: 'absolute', bottom: 8, right: 8, background: 'rgba(0,0,0,0.6)', color: '#fff', padding: '2px 8px', borderRadius: 12, fontSize: 12 }}>

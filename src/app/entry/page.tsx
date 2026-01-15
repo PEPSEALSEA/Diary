@@ -7,6 +7,7 @@ import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import Header from '@/components/Header';
 import LoadingOverlay from '@/components/LoadingOverlay';
+import ImageViewer from '@/components/ImageViewer';
 
 function EntryContent() {
     const params = useSearchParams();
@@ -19,6 +20,14 @@ function EntryContent() {
     const [loading, setLoading] = useState(true);
 
     const [error, setError] = useState('');
+
+    const [viewer, setViewer] = useState<{ isOpen: boolean, images: string[], index: number }>({ isOpen: false, images: [], index: 0 });
+
+    const openViewer = (images: string[], index: number) => {
+        setViewer({ isOpen: true, images, index });
+    };
+
+    const closeViewer = () => setViewer(prev => ({ ...prev, isOpen: false }));
 
     useEffect(() => {
         if (username && dateParam) loadEntry();
@@ -62,6 +71,12 @@ function EntryContent() {
 
     return (
         <div className="container">
+            <ImageViewer
+                isOpen={viewer.isOpen}
+                images={viewer.images}
+                initialIndex={viewer.index}
+                onClose={closeViewer}
+            />
             <Header />
 
             <div style={{ maxWidth: 800, margin: '0 auto' }}>
@@ -85,10 +100,15 @@ function EntryContent() {
 
                         {pictures.length > 0 && (
                             <div style={{ marginTop: 24, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16 }}>
-                                {pictures.map(p => (
-                                    <a key={p.pictureId} href={p.url} target="_blank" rel="noopener noreferrer" className="card" style={{ padding: 4, height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                                {pictures.map((p, idx) => (
+                                    <div
+                                        key={p.pictureId}
+                                        onClick={() => openViewer(pictures.map(x => x.url), idx)}
+                                        className="card"
+                                        style={{ padding: 4, height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', cursor: 'pointer' }}
+                                    >
                                         <img src={p.url} alt="Diary entry" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'cover' }} />
-                                    </a>
+                                    </div>
                                 ))}
                             </div>
                         )}
