@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   title: "Daily Diary",
   description: "Your personal diary app",
   icons: {
-    icon: '/logo.png',
+    icon: '/Diary/logo.png',
   },
 };
 
@@ -22,7 +22,7 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-        <link rel="icon" href="/logo.png" />
+        <link rel="icon" href="/Diary/logo.png" />
         {/* eslint-disable-next-line @next/next/no-page-custom-font */}
       </head>
       <body>

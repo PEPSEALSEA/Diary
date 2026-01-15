@@ -25,7 +25,7 @@ export default function Header() {
             <div className="header">
                 <div className="brand">
                     <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'inherit' }}>
-                        <img src="/logo.png" alt="Logo" style={{ height: 32, width: 'auto' }} />
+                        <img src="/Diary/logo.png" alt="Logo" style={{ height: 32, width: 'auto' }} />
                         <span style={{ fontWeight: 700, fontSize: 18 }}>Daily Diary</span>
                     </Link>
                 </div>
