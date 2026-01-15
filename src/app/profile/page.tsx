@@ -25,9 +25,11 @@ const ProfileContent = () => {
     const [friends, setFriends] = useState<any[]>([]);
     const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
 
-    // Loading States
+    // Loading & Validating States
     const [loadingProfile, setLoadingProfile] = useState(true);
+    const [validatingProfile, setValidatingProfile] = useState(false);
     const [loadingEntries, setLoadingEntries] = useState(false);
+    const [validatingEntries, setValidatingEntries] = useState(false);
 
     // Pagination
     const [hasMore, setHasMore] = useState(true);
@@ -67,7 +69,21 @@ const ProfileContent = () => {
     }, [username, profile, debouncedSearch]);
 
     const loadProfile = async () => {
-        setLoadingProfile(true);
+        const cacheKey = `profile:${username}:${viewer?.id || 'guest'}`;
+        const cached = typeof window !== 'undefined' ? localStorage.getItem(cacheKey) : null;
+
+        if (cached) {
+            try {
+                const parsed = JSON.parse(cached);
+                setProfile(parsed);
+                setFriends(parsed.friends || []);
+                setLoadingProfile(false);
+                setValidatingProfile(true);
+            } catch (e) { }
+        } else {
+            setLoadingProfile(true);
+        }
+
         try {
             const res = await api.get({
                 action: 'getProfile',
@@ -77,6 +93,7 @@ const ProfileContent = () => {
             if (res.success && res.profile) {
                 setProfile(res.profile);
                 setFriends(res.profile.friends || []);
+                localStorage.setItem(cacheKey, JSON.stringify(res.profile));
             }
 
             if (viewer?.username === username) {
@@ -87,12 +104,27 @@ const ProfileContent = () => {
             console.error(e);
         } finally {
             setLoadingProfile(false);
+            setValidatingProfile(false);
         }
     };
 
     const loadEntries = async (offset = 0) => {
         if (loadingEntries && offset !== 0) return;
-        setLoadingEntries(true);
+
+        const cacheKey = `entries:${username}:${offset}:${debouncedSearch || 'none'}`;
+        const cached = offset === 0 && typeof window !== 'undefined' ? localStorage.getItem(cacheKey) : null;
+
+        if (cached && offset === 0) {
+            try {
+                const parsed = JSON.parse(cached);
+                setEntries(parsed.entries || []);
+                setHasMore(parsed.hasMore || false);
+                setValidatingEntries(true);
+            } catch (e) { }
+        } else {
+            setLoadingEntries(true);
+        }
+
         try {
             const res = await api.get({
                 action: 'getPublicDiaryEntries',
@@ -107,15 +139,18 @@ const ProfileContent = () => {
             if (res.success) {
                 if (offset === 0) {
                     setEntries(res.entries || []);
+                    setHasMore(res.hasMore || false);
+                    localStorage.setItem(cacheKey, JSON.stringify({ entries: res.entries, hasMore: res.hasMore }));
                 } else {
                     setEntries(prev => [...prev, ...(res.entries || [])]);
+                    setHasMore(res.hasMore || false);
                 }
-                setHasMore(res.hasMore || false);
             }
         } catch (e) {
             console.error(e);
         } finally {
             setLoadingEntries(false);
+            setValidatingEntries(false);
         }
     };
 
@@ -183,6 +218,26 @@ const ProfileContent = () => {
             }}>
                 {/* Banner Effect */}
                 <div style={{ height: 120, background: 'linear-gradient(45deg, var(--accent-2), var(--accent))', opacity: 0.1 }}></div>
+
+                {validatingProfile && (
+                    <div style={{
+                        position: 'absolute',
+                        top: 12,
+                        right: 12,
+                        fontSize: 10,
+                        color: 'var(--accent)',
+                        background: 'rgba(0,0,0,0.4)',
+                        padding: '4px 8px',
+                        borderRadius: 4,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        animation: 'pulse 1.5s infinite'
+                    }}>
+                        <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'currentColor' }}></div>
+                        Syncing...
+                    </div>
+                )}
 
                 <div style={{ padding: '0 24px 24px', marginTop: -60, display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'flex-end' }}>
 
@@ -306,7 +361,23 @@ const ProfileContent = () => {
 
                 </div>
 
-                <div>
+                {/* Right Main Feed */}
+                <div style={{ position: 'relative' }}>
+                    {validatingEntries && (
+                        <div style={{
+                            position: 'absolute',
+                            top: -10,
+                            right: 0,
+                            fontSize: 10,
+                            color: 'rgba(255,171,0,0.8)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            animation: 'pulse 2s infinite'
+                        }}>
+                            <Clock size={10} /> Checking for updates...
+                        </div>
+                    )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 16, flexWrap: 'wrap' }}>
                         <h3 style={{ fontSize: 18, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
                             <BookOpen size={20} /> Diary Timeline

@@ -45,7 +45,25 @@ export default function PublicFeed() {
             {loading && <LoadingOverlay message="Loading feed..." />}
             {/* Optional: Indicator for background update */}
             {validating && !loading && (
-                <div style={{ position: 'absolute', top: 10, right: 10, fontSize: 10, opacity: 0.5 }}>Updating...</div>
+                <div style={{
+                    position: 'absolute',
+                    top: 10,
+                    right: 10,
+                    fontSize: 11,
+                    color: 'var(--accent)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '4px 10px',
+                    background: 'rgba(255,255,255,0.05)',
+                    borderRadius: 12,
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    zIndex: 10,
+                    animation: 'pulse 2s infinite'
+                }}>
+                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }}></div>
+                    Updating Live...
+                </div>
             )}
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, gap: 16, flexWrap: 'wrap' }}>
