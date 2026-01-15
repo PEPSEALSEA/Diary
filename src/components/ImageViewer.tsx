@@ -16,6 +16,7 @@ export default function ImageViewer({ images, initialIndex = 0, isOpen, onClose 
     const [position, setPosition] = useState({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = useState(false);
     const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+    const [wasDragging, setWasDragging] = useState(false);
 
     useEffect(() => {
         if (isOpen) {
@@ -59,7 +60,10 @@ export default function ImageViewer({ images, initialIndex = 0, isOpen, onClose 
 
     const handleImageClick = (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (isDragging) return; // Don't toggle zoom if we just dragged
+        if (wasDragging) {
+            setWasDragging(false);
+            return;
+        }
 
         if (zoom > 1) {
             setZoom(1);
@@ -72,6 +76,7 @@ export default function ImageViewer({ images, initialIndex = 0, isOpen, onClose 
     const handleMouseDown = (e: React.MouseEvent) => {
         if (zoom > 1) {
             setIsDragging(true);
+            setWasDragging(false);
             setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
         }
     };
@@ -79,9 +84,14 @@ export default function ImageViewer({ images, initialIndex = 0, isOpen, onClose 
     const handleMouseMove = (e: React.MouseEvent) => {
         if (isDragging && zoom > 1) {
             e.preventDefault();
+            const newX = e.clientX - dragStart.x;
+            const newY = e.clientY - dragStart.y;
+            if (Math.abs(newX - position.x) > 2 || Math.abs(newY - position.y) > 2) {
+                setWasDragging(true);
+            }
             setPosition({
-                x: e.clientX - dragStart.x,
-                y: e.clientY - dragStart.y
+                x: newX,
+                y: newY
             });
         }
     };
@@ -93,6 +103,7 @@ export default function ImageViewer({ images, initialIndex = 0, isOpen, onClose 
     const handleTouchStart = (e: React.TouchEvent) => {
         if (zoom > 1) {
             setIsDragging(true);
+            setWasDragging(false);
             const touch = e.touches[0];
             setDragStart({ x: touch.clientX - position.x, y: touch.clientY - position.y });
         }
@@ -102,9 +113,14 @@ export default function ImageViewer({ images, initialIndex = 0, isOpen, onClose 
         if (isDragging && zoom > 1) {
             // e.preventDefault(); // Might interfere with scrolling if not careful, but we locked body scroll
             const touch = e.touches[0];
+            const newX = touch.clientX - dragStart.x;
+            const newY = touch.clientY - dragStart.y;
+            if (Math.abs(newX - position.x) > 2 || Math.abs(newY - position.y) > 2) {
+                setWasDragging(true);
+            }
             setPosition({
-                x: touch.clientX - dragStart.x,
-                y: touch.clientY - dragStart.y
+                x: newX,
+                y: newY
             });
         }
     };
