@@ -131,7 +131,7 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
         }
     };
 
-    // Autosave
+    // Autosavedata
     const lastSavedDiff = useRef({ title, content, privacy, date });
 
     // Fetch all entries for instant switching
