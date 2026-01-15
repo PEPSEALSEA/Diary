@@ -177,7 +177,8 @@ export const api = {
     addPictureMetadata: (userId: string, entryId: string, driveId: string, url: string) =>
         api.post({ action: 'addPictureMetadata', userId, entryId, driveId, url }),
     getEntryPictures: (entryId: string) => api.get({ action: 'getEntryPictures', entryId }),
-    deletePicture: (pictureId: string, userId: string) => api.post({ action: 'deletePicture', pictureId, userId })
+    deletePicture: (pictureId: string, userId: string) => api.post({ action: 'deletePicture', pictureId, userId }),
+    updatePictureOrder: (userId: string, pictureIds: string[]) => api.post({ action: 'updatePictureOrder', userId, pictureIds: JSON.stringify(pictureIds) })
 };
 
 

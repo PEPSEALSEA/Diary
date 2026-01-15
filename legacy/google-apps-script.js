@@ -247,6 +247,8 @@ function doPost(e) {
       return addCorsHeaders(handlePictureMetadata(combinedParams));
     } else if (action === 'deletePicture') {
       return addCorsHeaders(handleDeletePicture(combinedParams));
+    } else if (action === 'updatePictureOrder') {
+      return addCorsHeaders(handleUpdatePictureOrder(combinedParams));
     } else if (action === 'setupSheets') {
       return setupSheets();
     }
@@ -817,6 +819,7 @@ function getDiaryEntry(username, date, viewerUserId, viewerEmail) {
           success: true,
           message: 'Diary entry found',
           entry: {
+            entryId: data[i][0],
             username: data[i][2],
             date: rowDate,
             title: data[i][4],
@@ -898,15 +901,32 @@ function getPublicDiaryEntries(username, date, month, year, limit, maxContent, v
     // Fetch pictures to attach
     const picSheet = getOrCreatePicturesSheet();
     const picData = picSheet.getDataRange().getValues();
-    const picMap = {};
+    const headers = picData[0];
+    const orderIdx = headers.indexOf('Sort Order');
+    const picMap = {}; // entryId -> [{url, order, created}, ...]
+
     for (let p = 1; p < picData.length; p++) {
       const pEntryId = picData[p][2];
       const pUrl = picData[p][4];
+      const pOrder = orderIdx > -1 ? (Number(picData[p][orderIdx]) || 0) : 0;
+      const pCreated = picData[p][5];
+
       if (pEntryId && pUrl) {
         if (!picMap[pEntryId]) picMap[pEntryId] = [];
-        picMap[pEntryId].push(pUrl);
+        picMap[pEntryId].push({ url: pUrl, order: pOrder, created: pCreated });
       }
     }
+
+    // Sort pictures for each entry
+    Object.keys(picMap).forEach(k => {
+      picMap[k].sort((a, b) => {
+        if (a.order !== b.order) return a.order - b.order;
+        // Fallback to created date if orders are equal
+        return new Date(a.created) - new Date(b.created);
+      });
+      // Convert back to just URLs
+      picMap[k] = picMap[k].map(item => item.url);
+    });
 
     const publicEntries = [];
     const reqUser = username ? String(username || '').trim().toLowerCase() : '';
@@ -1081,7 +1101,7 @@ function getOrCreateDiaryEntriesSheet() {
 
 function getOrCreatePicturesSheet() {
   try {
-    const requiredColumns = ['Picture ID', 'User ID', 'Entry ID', 'Drive ID', 'URL', 'Created'];
+    const requiredColumns = ['Picture ID', 'User ID', 'Entry ID', 'Drive ID', 'URL', 'Created', 'Sort Order'];
     return ensureSheetAndColumns(PICTURES_SHEET_NAME, requiredColumns);
   } catch (error) {
     Logger.log('Error accessing pictures sheet: ' + error.toString());
@@ -1112,6 +1132,7 @@ function handleGetPictures(entryId) {
     if (!entryId) return createResponse(false, 'entryId required');
     const sheet = getOrCreatePicturesSheet();
     const data = sheet.getDataRange().getValues();
+    const orderIdx = data[0].indexOf('Sort Order');
     const pictures = [];
     for (let i = 1; i < data.length; i++) {
       if (data[i][2] === entryId) {
@@ -1119,10 +1140,16 @@ function handleGetPictures(entryId) {
           pictureId: data[i][0],
           driveId: data[i][3],
           url: data[i][4],
-          created: data[i][5]
+          created: data[i][5],
+          order: orderIdx > -1 ? (Number(data[i][orderIdx]) || 0) : 0
         });
       }
     }
+    // Sort
+    pictures.sort((a, b) => {
+      if (a.order !== b.order) return a.order - b.order;
+      return new Date(a.created) - new Date(b.created);
+    });
     return createResponse(true, 'Pictures retrieved', { pictures: pictures });
   } catch (e) {
     return createResponse(false, 'Failed to get pictures');
@@ -1145,6 +1172,66 @@ function handleDeletePicture(params) {
     return createResponse(false, 'Picture not found or unauthorized');
   } catch (e) {
     return createResponse(false, 'Failed to delete picture');
+  }
+}
+
+function handleUpdatePictureOrder(params) {
+  try {
+    const userId = params.userId;
+    const pictureIds = params.pictureIds ? JSON.parse(params.pictureIds) : [];
+
+    if (!userId) return createResponse(false, 'userId required');
+    if (!Array.isArray(pictureIds) || pictureIds.length === 0) return createResponse(true, 'No updates');
+
+    const sheet = getOrCreatePicturesSheet();
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    let orderIdx = headers.indexOf('Sort Order');
+
+    // Safety check: ensure column exists (though getOrCreate should have added it)
+    if (orderIdx === -1) {
+      // Should not happen if getOrCreatePicturesSheet works, but just in case
+      return createResponse(false, 'Sort Order column missing');
+    }
+
+    // Create a map of pictureId -> newOrder
+    const orderMap = {};
+    pictureIds.forEach((pid, idx) => {
+      orderMap[pid] = idx;
+    });
+
+    // Iterate and update
+    // Note: This is O(N) scan. For very large sheets, this might be slow, but Pictures sheet is usually manageable.
+    // Optimization: Bulk update? Sheets API allows it, but here we iterate.
+    // To minimize setData calls, we can fetch all, modify in memory, and write back column?
+    // Writing back the whole sheet is risky. Writing back strict ranges is better.
+    // But rows might be scattered.
+    // Simple approach: set value line by line. It's slow but safe for small batches.
+    // Better approach: Read the column, update in memory, write back the column.
+
+    const updates = []; // { row: x, val: y }
+
+    for (let i = 1; i < data.length; i++) {
+      const rowPid = data[i][0];
+      const rowOwner = data[i][1];
+      if (rowOwner === userId && orderMap.hasOwnProperty(rowPid)) {
+        // Update this row
+        const newOrder = orderMap[rowPid];
+        // Only write if changed
+        const currentOrder = headers.indexOf('Sort Order') > -1 ? data[i][orderIdx] : -1;
+        if (currentOrder != newOrder) {
+          try {
+            sheet.getRange(i + 1, orderIdx + 1).setValue(newOrder);
+          } catch (e) { }
+        }
+      }
+    }
+
+    return createResponse(true, 'Order updated');
+
+  } catch (e) {
+    Logger.log('Error updatePictureOrder: ' + e.toString());
+    return createResponse(false, 'Failed to update order');
   }
 }
 

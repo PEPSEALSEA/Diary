@@ -6,12 +6,70 @@ import { User } from '@/lib/api';
 import { useToast } from '@/context/ToastContext';
 import LoadingOverlay from '../LoadingOverlay';
 import { useCachedQuery } from '@/hooks/useCachedQuery';
+import {
+    DndContext,
+    closestCenter,
+    KeyboardSensor,
+    PointerSensor,
+    useSensor,
+    useSensors,
+    DragEndEvent
+} from '@dnd-kit/core';
+import {
+    arrayMove,
+    SortableContext,
+    sortableKeyboardCoordinates,
+    rectSortingStrategy,
+    useSortable
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface DiaryEditorProps {
     user: User;
     onEntryChange: () => void;
     initialDate?: string;
     refreshTrigger?: number;
+}
+
+function SortablePicture({ picture, onDelete }: { picture: any, onDelete: (id: string) => void }) {
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        transform,
+        transition,
+    } = useSortable({ id: picture.pictureId });
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        padding: 4,
+        position: 'relative' as const,
+        width: 100,
+        height: 100,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+        touchAction: 'none' // Prevent scrolling while dragging
+    };
+
+    return (
+        <div ref={setNodeRef} style={style} {...attributes} {...listeners} className="card">
+            <img src={picture.url} alt="Diary" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'cover', pointerEvents: 'none' }} />
+            <button
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(picture.pictureId);
+                }}
+                className="danger"
+                style={{ position: 'absolute', top: 2, right: 2, padding: '2px 6px', fontSize: 10, minWidth: 'auto', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+            >
+                ×
+            </button>
+        </div>
+    );
 }
 
 export default function DiaryEditor({ user, onEntryChange, initialDate, refreshTrigger = 0 }: DiaryEditorProps) {
@@ -28,6 +86,30 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
     const [loading, setLoading] = useState(false);
     const [isDirty, setIsDirty] = useState(false);
     const [editMode, setEditMode] = useState(true); // Default to edit mode for simplicity or mimic old app
+
+    const sensors = useSensors(
+        useSensor(PointerSensor),
+        useSensor(KeyboardSensor, {
+            coordinateGetter: sortableKeyboardCoordinates,
+        })
+    );
+
+    const handleDragEnd = (event: DragEndEvent) => {
+        const { active, over } = event;
+        if (over && active.id !== over.id) {
+            setPictures((items) => {
+                const oldIndex = items.findIndex(i => i.pictureId === active.id);
+                const newIndex = items.findIndex(i => i.pictureId === over.id);
+                const newItems = arrayMove(items, oldIndex, newIndex);
+
+                // Save order
+                const ids = newItems.map(i => i.pictureId);
+                api.updatePictureOrder(user.id, ids);
+
+                return newItems;
+            });
+        }
+    };
 
     // Autosave
     const lastSavedDiff = useRef({ title, content, privacy, date });
@@ -369,18 +451,20 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
 
             <label>Pictures</label>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-                {pictures.map(p => (
-                    <div key={p.pictureId} className="card" style={{ padding: 4, position: 'relative', width: 100, height: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                        <img src={p.url} alt="Diary" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'cover' }} />
-                        <button
-                            onClick={() => handleDeletePicture(p.pictureId)}
-                            className="danger"
-                            style={{ position: 'absolute', top: 2, right: 2, padding: '2px 6px', fontSize: 10, minWidth: 'auto', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                        >
-                            ×
-                        </button>
-                    </div>
-                ))}
+                <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
+                >
+                    <SortableContext
+                        items={pictures.map(p => p.pictureId)}
+                        strategy={rectSortingStrategy}
+                    >
+                        {pictures.map(p => (
+                            <SortablePicture key={p.pictureId} picture={p} onDelete={handleDeletePicture} />
+                        ))}
+                    </SortableContext>
+                </DndContext>
                 <label className="card" style={{
                     cursor: 'pointer',
                     width: 100,
