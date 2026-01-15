@@ -8,8 +8,9 @@ import LoadingOverlay from '@/components/LoadingOverlay';
 import ImageViewer from '@/components/ImageViewer';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
+import HighlightText from '@/components/HighlightText';
 import { api, FriendRequest, ApiResponse, toDisplayDate, DiaryEntry } from '@/lib/api';
-import { Users, BookOpen, Clock, Calendar, ChevronDown, Check, X, UserPlus, MessageSquare } from 'lucide-react';
+import { Users, BookOpen, Clock, Calendar, ChevronDown, Check, X, UserPlus, MessageSquare, Search } from 'lucide-react';
 
 const ProfileContent = () => {
     const params = useSearchParams();
@@ -32,6 +33,15 @@ const ProfileContent = () => {
     const [hasMore, setHasMore] = useState(true);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
 
+    // Search
+    const [searchQuery, setSearchQuery] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedSearch(searchQuery), 300);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
+
     // Modals
     const [showStats, setShowStats] = useState(false);
     const [showFriendsModal, setShowFriendsModal] = useState(false);
@@ -49,12 +59,12 @@ const ProfileContent = () => {
         }
     }, [username, viewer, refreshTrigger]);
 
-    // Initial load of first batch of entries
+    // Initial load or search query change
     useEffect(() => {
         if (username && profile) {
             loadEntries(0);
         }
-    }, [username, profile]);
+    }, [username, profile, debouncedSearch]);
 
     const loadProfile = async () => {
         setLoadingProfile(true);
@@ -89,6 +99,7 @@ const ProfileContent = () => {
                 username,
                 limit: 10,
                 offset,
+                q: debouncedSearch,
                 viewerUserId: viewer?.id,
                 viewerEmail: viewer?.email
             });
@@ -295,11 +306,23 @@ const ProfileContent = () => {
 
                 </div>
 
-                {/* Right Main Feed */}
                 <div>
-                    <h3 style={{ fontSize: 18, margin: '0 0 16px', display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <BookOpen size={20} /> Diary Timeline
-                    </h3>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 16, flexWrap: 'wrap' }}>
+                        <h3 style={{ fontSize: 18, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <BookOpen size={20} /> Diary Timeline
+                        </h3>
+                        <div style={{ position: 'relative', flex: 1, maxWidth: 250 }}>
+                            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} />
+                            <input
+                                type="text"
+                                placeholder="Search timeline..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="input"
+                                style={{ paddingLeft: 32, fontSize: 13, marginBottom: 0, height: 36 }}
+                            />
+                        </div>
+                    </div>
 
                     {entries.length === 0 && !loadingEntries && (
                         <div className="card" style={{ padding: 40, textAlign: 'center', color: '#888' }}>
@@ -312,16 +335,19 @@ const ProfileContent = () => {
                             <div key={entry.entryId} className="card" style={{ padding: 0, overflow: 'hidden' }}>
                                 {/* Date Header */}
                                 <div style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border)', fontSize: 13, color: '#888', display: 'flex', justifyContent: 'space-between' }}>
-                                    <span>{toDisplayDate(entry.date)}</span>
+                                    <span><HighlightText text={toDisplayDate(entry.date)} query={debouncedSearch} /></span>
                                     <span>{entry.privacy}</span>
                                 </div>
 
                                 <div style={{ padding: 24 }}>
                                     <Link href={`/entry?u=${encodeURIComponent(username)}&d=${toDisplayDate(entry.date)}`} className="link" style={{ fontSize: 20, fontWeight: 700, display: 'block', marginBottom: 12 }}>
-                                        {entry.title || 'Untitled'}
+                                        <HighlightText text={entry.title || 'Untitled'} query={debouncedSearch} />
                                     </Link>
                                     <div style={{ lineHeight: 1.6, fontSize: 15, color: '#ccc', marginBottom: 16 }}>
-                                        {entry.content.length > 300 ? entry.content.slice(0, 300) + '...' : entry.content}
+                                        <HighlightText
+                                            text={entry.content.length > 300 ? entry.content.slice(0, 300) + '...' : entry.content}
+                                            query={debouncedSearch}
+                                        />
                                     </div>
 
                                     {/* Picture Preview */}

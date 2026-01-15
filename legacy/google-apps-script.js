@@ -147,9 +147,10 @@ function doGet(e) {
       const limit = e.parameter.limit;
       const offset = e.parameter.offset;
       const maxContent = e.parameter.maxContent;
+      const search = e.parameter.q || e.parameter.search || '';
       const viewerUserId = e.parameter.viewerUserId || '';
       const viewerEmail = e.parameter.viewerEmail || '';
-      return addCorsHeaders(getPublicDiaryEntries(username, date, month, year, limit, offset, maxContent, viewerUserId, viewerEmail));
+      return addCorsHeaders(getPublicDiaryEntries(username, date, month, year, limit, offset, maxContent, search, viewerUserId, viewerEmail));
     } else if (action === 'listFriends') {
       const ownerId = e.parameter.ownerId;
       return addCorsHeaders(listFriends(ownerId));
@@ -884,7 +885,7 @@ function getUserDiaryEntries(userId, month, year) {
   }
 }
 
-function getPublicDiaryEntries(username, date, month, year, limit, offset, maxContent, viewerUserId, viewerEmail) {
+function getPublicDiaryEntries(username, date, month, year, limit, offset, maxContent, search, viewerUserId, viewerEmail) {
   try {
     const cacheKey = 'pub:list:'
       + (username ? String(username).toLowerCase() : '') + ':'
@@ -893,7 +894,9 @@ function getPublicDiaryEntries(username, date, month, year, limit, offset, maxCo
       + (year || '') + ':'
       + (limit || '') + ':'
       + (offset || '') + ':'
-      + (maxContent || '') + ':' + (viewerUserId || '') + ':' + (viewerEmail || '');
+      + (maxContent || '') + ':'
+      + (search || '') + ':'
+      + (viewerUserId || '') + ':' + (viewerEmail || '');
     const cached = cacheGetJson(cacheKey);
     if (cached) {
       return ContentService.createTextOutput(JSON.stringify(cached)).setMimeType(ContentService.MimeType.JSON);
@@ -937,16 +940,31 @@ function getPublicDiaryEntries(username, date, month, year, limit, offset, maxCo
     const maxLen = maxContent ? parseInt(maxContent, 10) : null;
     const maxItems = limit ? parseInt(limit, 10) : null;
     const skipItems = offset ? parseInt(offset, 10) : 0;
+    const q = search ? String(search).toLowerCase().trim() : '';
+
     for (let i = 1; i < data.length; i++) {
       const ownerId = data[i][1];
-      const privacy = normalizePrivacy(data[i][6], null);
-      if (!canViewEntry(ownerId, viewerUserId || '', privacy, viewerEmail || '')) continue;
-      if (reqUser && String(data[i][2] || '').trim().toLowerCase() !== reqUser) continue;
+      const rowUsername = String(data[i][2] || '').trim();
+      const rowTitle = String(data[i][4] || '').trim();
       const rowDate = normalizeDateCell(data[i][3]);
+      const rowContent = String(data[i][5] || '').trim();
+      const privacy = normalizePrivacy(data[i][6], null);
+
+      if (!canViewEntry(ownerId, viewerUserId || '', privacy, viewerEmail || '')) continue;
+      if (reqUser && rowUsername.toLowerCase() !== reqUser) continue;
       if (date && rowDate !== date) continue;
       if (reqMonth && !rowDate.startsWith(reqMonth)) continue;
       if (reqYear && !rowDate.startsWith(reqYear)) continue;
-      let content = data[i][5];
+
+      if (q) {
+        const match = rowUsername.toLowerCase().includes(q) ||
+          rowTitle.toLowerCase().includes(q) ||
+          rowDate.includes(q) ||
+          rowContent.toLowerCase().includes(q);
+        if (!match) continue;
+      }
+
+      let content = rowContent;
       if (typeof content === 'string' && maxLen && maxLen > 0 && content.length > maxLen) {
         content = content.slice(0, maxLen) + '…';
       }
