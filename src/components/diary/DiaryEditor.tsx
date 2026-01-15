@@ -434,6 +434,16 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
         try {
             const res = await api.deletePicture(pictureId, user.id);
             if (res.success) {
+                // If there's a driveId, archive it
+                if (res.driveId) {
+                    try {
+                        await api.archiveFiles([res.driveId]);
+                    } catch (driveErr) {
+                        console.error('Failed to archive file in Drive', driveErr);
+                        // We don't necessarily want to block the UI if Drive move fails, 
+                        // as the metadata is already gone.
+                    }
+                }
                 toast('Picture deleted');
                 setPictures(prev => prev.filter(p => p.pictureId !== pictureId));
             }

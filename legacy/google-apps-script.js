@@ -1256,8 +1256,9 @@ function handleDeletePicture(params) {
     const data = sheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
       if (data[i][0] === pictureId && data[i][1] === userId) {
+        const driveId = data[i][3];
         sheet.deleteRow(i + 1);
-        return createResponse(true, 'Picture deleted');
+        return createResponse(true, 'Picture deleted', { driveId: driveId });
       }
     }
     return createResponse(false, 'Picture not found or unauthorized');

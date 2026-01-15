@@ -209,15 +209,15 @@ const ProfileContent = () => {
             />
 
             {/* Top Profile Card */}
-            <div className="card" style={{
+            <div className="card glass" style={{
                 position: 'relative',
                 overflow: 'hidden',
                 padding: 0,
-                border: 'none',
+                border: '1px solid rgba(255,255,255,0.1)',
                 background: 'linear-gradient(to bottom, #1e242e, #171a21)'
             }}>
                 {/* Banner Effect */}
-                <div style={{ height: 120, background: 'linear-gradient(45deg, var(--accent-2), var(--accent))', opacity: 0.1 }}></div>
+                <div style={{ height: 160, background: 'linear-gradient(45deg, var(--accent), var(--accent-2))', opacity: 0.2 }}></div>
 
                 {validatingProfile && (
                     <div style={{
@@ -239,7 +239,7 @@ const ProfileContent = () => {
                     </div>
                 )}
 
-                <div style={{ padding: '0 24px 24px', marginTop: -60, display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'flex-end' }}>
+                <div className="profile-top-card" style={{ padding: '0 24px 24px', marginTop: -60, display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'flex-end' }}>
 
                     {/* Avatar */}
                     <div style={{ position: 'relative' }}>
@@ -267,7 +267,7 @@ const ProfileContent = () => {
                     </div>
 
                     {/* Info */}
-                    <div style={{ flex: 1, marginBottom: 10 }}>
+                    <div className="profile-info" style={{ flex: 1, marginBottom: 10, display: 'flex', flexDirection: 'column' }}>
                         <h1 style={{ fontSize: 32, margin: '0 0 4px', color: '#fff' }}>{profile.username}</h1>
                         <div style={{ display: 'flex', gap: 16, fontSize: 13, color: '#888' }}>
                             <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -282,7 +282,7 @@ const ProfileContent = () => {
                     </div>
 
                     {/* Actions */}
-                    <div style={{ marginBottom: 10, display: 'flex', gap: 8 }}>
+                    <div className="profile-actions" style={{ marginBottom: 10, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                         {!isSelf && !isFriend && (
                             <button className="button" onClick={handleAddFriend} disabled={actionLoading}>
                                 <UserPlus size={16} style={{ marginRight: 6 }} /> Add Friend
@@ -301,7 +301,7 @@ const ProfileContent = () => {
             </div>
 
             {/* Content Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 24, marginTop: 24, alignItems: 'start' }}>
+            <div className="profile-layout" style={{ marginTop: 24 }}>
 
                 {/* Left Sidebar */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -403,7 +403,7 @@ const ProfileContent = () => {
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                         {entries.map((entry) => (
-                            <div key={entry.entryId} className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                            <div key={entry.entryId} className="card timeline-entry" style={{ padding: 0, overflow: 'hidden' }}>
                                 {/* Date Header */}
                                 <div style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border)', fontSize: 13, color: '#888', display: 'flex', justifyContent: 'space-between' }}>
                                     <span><HighlightText text={toDisplayDate(entry.date)} query={debouncedSearch} /></span>
@@ -423,7 +423,7 @@ const ProfileContent = () => {
 
                                     {/* Picture Preview */}
                                     {entry.pictures && entry.pictures.length > 0 && (
-                                        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8 }}>
+                                        <div className="pic-preview-scroll" style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 12 }}>
                                             {entry.pictures.slice(0, 4).map((pic, idx) => (
                                                 <div
                                                     key={idx}
