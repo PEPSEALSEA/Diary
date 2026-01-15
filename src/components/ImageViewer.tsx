@@ -12,16 +12,28 @@ interface ImageViewerProps {
 
 export default function ImageViewer({ images, initialIndex = 0, isOpen, onClose }: ImageViewerProps) {
     const [currentIndex, setCurrentIndex] = useState(initialIndex);
+    const [zoom, setZoom] = useState(1);
+    const [position, setPosition] = useState({ x: 0, y: 0 });
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
     useEffect(() => {
         if (isOpen) {
             setCurrentIndex(initialIndex);
-            document.body.style.overflow = 'hidden'; // Lock scroll
+            setZoom(1);
+            setPosition({ x: 0, y: 0 });
+            document.body.style.overflow = 'hidden';
         } else {
             document.body.style.overflow = '';
         }
         return () => { document.body.style.overflow = ''; };
     }, [isOpen, initialIndex]);
+
+    // Reset zoom when changing image
+    useEffect(() => {
+        setZoom(1);
+        setPosition({ x: 0, y: 0 });
+    }, [currentIndex]);
 
     const handlePrev = useCallback((e?: React.MouseEvent) => {
         e?.stopPropagation();
@@ -45,6 +57,63 @@ export default function ImageViewer({ images, initialIndex = 0, isOpen, onClose 
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isOpen, onClose, handlePrev, handleNext]);
 
+    const handleImageClick = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (isDragging) return; // Don't toggle zoom if we just dragged
+
+        if (zoom > 1) {
+            setZoom(1);
+            setPosition({ x: 0, y: 0 });
+        } else {
+            setZoom(2.5);
+        }
+    };
+
+    const handleMouseDown = (e: React.MouseEvent) => {
+        if (zoom > 1) {
+            setIsDragging(true);
+            setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+        }
+    };
+
+    const handleMouseMove = (e: React.MouseEvent) => {
+        if (isDragging && zoom > 1) {
+            e.preventDefault();
+            setPosition({
+                x: e.clientX - dragStart.x,
+                y: e.clientY - dragStart.y
+            });
+        }
+    };
+
+    const handleMouseUp = () => {
+        setIsDragging(false);
+    };
+
+    const handleTouchStart = (e: React.TouchEvent) => {
+        if (zoom > 1) {
+            setIsDragging(true);
+            const touch = e.touches[0];
+            setDragStart({ x: touch.clientX - position.x, y: touch.clientY - position.y });
+        }
+    };
+
+    const handleTouchMove = (e: React.TouchEvent) => {
+        if (isDragging && zoom > 1) {
+            // e.preventDefault(); // Might interfere with scrolling if not careful, but we locked body scroll
+            const touch = e.touches[0];
+            setPosition({
+                x: touch.clientX - dragStart.x,
+                y: touch.clientY - dragStart.y
+            });
+        }
+    };
+
+    const handleTouchEnd = () => {
+        setIsDragging(false);
+    };
+
+
     if (!isOpen || images.length === 0) return null;
 
     return (
@@ -55,14 +124,19 @@ export default function ImageViewer({ images, initialIndex = 0, isOpen, onClose 
                 left: 0,
                 right: 0,
                 bottom: 0,
-                backgroundColor: 'rgba(0, 0, 0, 0.9)',
+                backgroundColor: 'rgba(0, 0, 0, 0.95)',
                 zIndex: 9999,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                flexDirection: 'column'
+                flexDirection: 'column',
+                userSelect: 'none'
             }}
             onClick={onClose}
+            onMouseUp={handleMouseUp}
+            onMouseMove={handleMouseMove}
+            onTouchEnd={handleTouchEnd}
+            onTouchMove={handleTouchMove}
         >
             <button
                 onClick={onClose}
@@ -89,20 +163,20 @@ export default function ImageViewer({ images, initialIndex = 0, isOpen, onClose 
             <div
                 style={{
                     position: 'relative',
-                    maxWidth: '90vw',
-                    maxHeight: '90vh',
+                    width: '100%',
+                    height: '100%',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center'
+                    justifyContent: 'center',
+                    overflow: 'hidden'
                 }}
-                onClick={e => e.stopPropagation()} // Prevent close on image click
             >
                 {images.length > 1 && (
                     <button
                         onClick={handlePrev}
                         style={{
                             position: 'absolute',
-                            left: -60,
+                            left: 20,
                             top: '50%',
                             transform: 'translateY(-50%)',
                             background: 'rgba(255,255,255,0.1)',
@@ -125,12 +199,19 @@ export default function ImageViewer({ images, initialIndex = 0, isOpen, onClose 
                 <img
                     src={images[currentIndex]}
                     alt={`View ${currentIndex + 1}`}
+                    draggable={false}
+                    onMouseDown={handleMouseDown}
+                    onClick={handleImageClick}
+                    onTouchStart={handleTouchStart}
                     style={{
-                        maxWidth: '100%',
-                        maxHeight: '85vh',
+                        maxWidth: zoom === 1 ? '90vw' : 'none',
+                        maxHeight: zoom === 1 ? '85vh' : 'none',
                         objectFit: 'contain',
                         borderRadius: 4,
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
+                        cursor: zoom > 1 ? (isDragging ? 'grabbing' : 'grab') : 'zoom-in',
+                        transform: `scale(${zoom}) translate(${position.x / zoom}px, ${position.y / zoom}px)`,
+                        transition: isDragging ? 'none' : 'transform 0.2s ease-out, max-width 0.2s, max-height 0.2s',
+                        transformOrigin: 'center center'
                     }}
                 />
 
@@ -139,7 +220,7 @@ export default function ImageViewer({ images, initialIndex = 0, isOpen, onClose 
                         onClick={handleNext}
                         style={{
                             position: 'absolute',
-                            right: -60,
+                            right: 20,
                             top: '50%',
                             transform: 'translateY(-50%)',
                             background: 'rgba(255,255,255,0.1)',
@@ -161,7 +242,7 @@ export default function ImageViewer({ images, initialIndex = 0, isOpen, onClose 
             </div>
 
             {images.length > 1 && (
-                <div style={{ marginTop: 16, color: '#aaa', fontSize: 14 }}>
+                <div style={{ position: 'absolute', bottom: 20, color: '#aaa', fontSize: 14 }}>
                     {currentIndex + 1} / {images.length}
                 </div>
             )}
