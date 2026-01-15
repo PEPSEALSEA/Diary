@@ -145,10 +145,11 @@ function doGet(e) {
       const month = e.parameter.month;
       const year = e.parameter.year;
       const limit = e.parameter.limit;
+      const offset = e.parameter.offset;
       const maxContent = e.parameter.maxContent;
       const viewerUserId = e.parameter.viewerUserId || '';
       const viewerEmail = e.parameter.viewerEmail || '';
-      return addCorsHeaders(getPublicDiaryEntries(username, date, month, year, limit, maxContent, viewerUserId, viewerEmail));
+      return addCorsHeaders(getPublicDiaryEntries(username, date, month, year, limit, offset, maxContent, viewerUserId, viewerEmail));
     } else if (action === 'listFriends') {
       const ownerId = e.parameter.ownerId;
       return addCorsHeaders(listFriends(ownerId));
@@ -883,7 +884,7 @@ function getUserDiaryEntries(userId, month, year) {
   }
 }
 
-function getPublicDiaryEntries(username, date, month, year, limit, maxContent, viewerUserId, viewerEmail) {
+function getPublicDiaryEntries(username, date, month, year, limit, offset, maxContent, viewerUserId, viewerEmail) {
   try {
     const cacheKey = 'pub:list:'
       + (username ? String(username).toLowerCase() : '') + ':'
@@ -891,6 +892,7 @@ function getPublicDiaryEntries(username, date, month, year, limit, maxContent, v
       + (month || '') + ':'
       + (year || '') + ':'
       + (limit || '') + ':'
+      + (offset || '') + ':'
       + (maxContent || '') + ':' + (viewerUserId || '') + ':' + (viewerEmail || '');
     const cached = cacheGetJson(cacheKey);
     if (cached) {
@@ -934,6 +936,7 @@ function getPublicDiaryEntries(username, date, month, year, limit, maxContent, v
     const reqYear = year || '';
     const maxLen = maxContent ? parseInt(maxContent, 10) : null;
     const maxItems = limit ? parseInt(limit, 10) : null;
+    const skipItems = offset ? parseInt(offset, 10) : 0;
     for (let i = 1; i < data.length; i++) {
       const ownerId = data[i][1];
       const privacy = normalizePrivacy(data[i][6], null);
@@ -960,12 +963,16 @@ function getPublicDiaryEntries(username, date, month, year, limit, maxContent, v
       });
     }
     publicEntries.sort((a, b) => new Date(b.date) - new Date(a.date));
-    const limited = (maxItems && maxItems > 0) ? publicEntries.slice(0, maxItems) : publicEntries;
+
+    // Apply limit and offset
+    const limited = publicEntries.slice(skipItems, (maxItems && maxItems > 0) ? skipItems + maxItems : undefined);
+
     const resp = {
       success: true,
       message: 'Public diary entries retrieved successfully',
       entries: limited,
-      total: publicEntries.length
+      total: publicEntries.length,
+      hasMore: (skipItems + limited.length) < publicEntries.length
     };
     cachePutJson(cacheKey, resp, 60);
     return ContentService.createTextOutput(JSON.stringify(resp)).setMimeType(ContentService.MimeType.JSON);

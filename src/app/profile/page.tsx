@@ -1,286 +1,291 @@
 'use client';
 
-import React, { Suspense, useState } from 'react';
+import React, { Suspense, useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import Header from '@/components/Header';
 import LoadingOverlay from '@/components/LoadingOverlay';
-import { useCachedQuery } from '@/hooks/useCachedQuery';
+import ImageViewer from '@/components/ImageViewer';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
-import { api, FriendRequest, ApiResponse, toDisplayDate } from '@/lib/api';
+import { api, FriendRequest, ApiResponse, toDisplayDate, DiaryEntry } from '@/lib/api';
+import { Users, BookOpen, Clock, Calendar, ChevronDown, Check, X, UserPlus, MessageSquare } from 'lucide-react';
 
 const ProfileContent = () => {
     const params = useSearchParams();
     const username = params.get('u') || '';
     const { user: viewer } = useAuth();
     const { toast } = useToast();
-    const [refresh, setRefresh] = useState(0);
     const [actionLoading, setActionLoading] = useState(false);
+
+    // Data States
+    const [profile, setProfile] = useState<any>(null);
+    const [entries, setEntries] = useState<DiaryEntry[]>([]);
+    const [friends, setFriends] = useState<any[]>([]);
+    const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+
+    // Loading States
+    const [loadingProfile, setLoadingProfile] = useState(true);
+    const [loadingEntries, setLoadingEntries] = useState(false);
+
+    // Pagination
+    const [hasMore, setHasMore] = useState(true);
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+    // Modals
     const [showStats, setShowStats] = useState(false);
+    const [showFriendsModal, setShowFriendsModal] = useState(false);
 
-    const { data: profileResp, loading: profileLoading } = useCachedQuery<ApiResponse>(
-        'profile-v4',
-        { action: 'getProfile', username, viewerUserId: viewer?.id || '' },
-        { enabled: !!username, refreshTrigger: refresh }
-    );
+    // Image Viewer
+    const [viewerState, setViewerState] = useState<{ isOpen: boolean, images: string[], index: number }>({ isOpen: false, images: [], index: 0 });
 
-    const { data: entriesResp, loading: entriesLoading } = useCachedQuery<ApiResponse>(
-        'profile-entries',
-        { action: 'getPublicDiaryEntries', username, limit: 10 },
-        { enabled: !!username }
-    );
+    const isSelf = viewer?.username === username;
 
-    const { data: requestsResp } = useCachedQuery<ApiResponse>(
-        'friend-requests',
-        { action: 'listFriendRequests', userId: viewer?.id || '' },
-        { enabled: !!viewer && viewer.username === username, refreshTrigger: refresh }
-    );
+    useEffect(() => {
+        if (username) {
+            loadProfile();
+            setEntries([]); // Reset entries on user change
+            setHasMore(true);
+        }
+    }, [username, viewer, refreshTrigger]);
 
-    const profile = profileResp?.profile;
-    const entries = entriesResp?.entries || [];
-    const requests: FriendRequest[] = requestsResp?.requests || [];
+    // Initial load of first batch of entries
+    useEffect(() => {
+        if (username && profile) {
+            loadEntries(0);
+        }
+    }, [username, profile]);
+
+    const loadProfile = async () => {
+        setLoadingProfile(true);
+        try {
+            const res = await api.get({
+                action: 'getProfile',
+                username,
+                viewerUserId: viewer?.id || ''
+            });
+            if (res.success && res.profile) {
+                setProfile(res.profile);
+                setFriends(res.profile.friends || []);
+            }
+
+            if (viewer?.username === username) {
+                const reqRes = await api.get({ action: 'listFriendRequests', userId: viewer.id });
+                if (reqRes.success) setFriendRequests(reqRes.requests || []);
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoadingProfile(false);
+        }
+    };
+
+    const loadEntries = async (offset = 0) => {
+        if (loadingEntries && offset !== 0) return;
+        setLoadingEntries(true);
+        try {
+            const res = await api.get({
+                action: 'getPublicDiaryEntries',
+                username,
+                limit: 10,
+                offset,
+                viewerUserId: viewer?.id,
+                viewerEmail: viewer?.email
+            });
+
+            if (res.success) {
+                if (offset === 0) {
+                    setEntries(res.entries || []);
+                } else {
+                    setEntries(prev => [...prev, ...(res.entries || [])]);
+                }
+                setHasMore(res.hasMore || false);
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoadingEntries(false);
+        }
+    };
 
     const handleAddFriend = async () => {
-        if (!viewer) {
-            toast('Please login to add friends', 'error');
-            return;
-        }
+        if (!viewer) return toast('Login required', 'error');
         setActionLoading(true);
         const res = await api.addFriend(viewer.id, username);
         if (res.success) {
-            toast(res.message || 'Request sent!');
-            setRefresh(prev => prev + 1);
+            toast('Friend request sent!');
+            setRefreshTrigger(p => p + 1);
         } else {
-            toast(res.error || 'Failed to send request', 'error');
+            toast(res.error || 'Failed', 'error');
         }
         setActionLoading(false);
     };
 
     const handleAccept = async (requesterId: string) => {
-        if (!viewer) return;
         setActionLoading(true);
-        const res = await api.acceptFriend(viewer.id, requesterId);
+        const res = await api.acceptFriend(viewer?.id || '', requesterId);
         if (res.success) {
-            toast('Friend request accepted!');
-            setRefresh(prev => prev + 1);
-        } else {
-            toast(res.error || 'Failed to accept request', 'error');
+            toast('Accepted!');
+            setRefreshTrigger(p => p + 1);
         }
         setActionLoading(false);
     };
 
     const handleDecline = async (requesterId: string) => {
-        if (!viewer) return;
         setActionLoading(true);
-        const res = await api.declineFriend(viewer.id, requesterId);
+        const res = await api.declineFriend(viewer?.id || '', requesterId);
         if (res.success) {
-            toast('Request declined');
-            setRefresh(prev => prev + 1);
-        } else {
-            toast(res.error || 'Failed to decline request', 'error');
+            toast('Declined');
+            setRefreshTrigger(p => p + 1);
         }
         setActionLoading(false);
     };
 
-    if (!username) return (
-        <div className="container">
-            <Header />
-            <div className="card" style={{ textAlign: 'center', padding: 40 }}>
-                No username specified
-            </div>
-        </div>
-    );
+    const openViewer = (images: string[], index: number = 0) => {
+        setViewerState({ isOpen: true, images, index });
+    };
 
-    if (profileLoading && !profile) {
-        return (
-            <div className="container">
-                <Header />
-                <LoadingOverlay message="Loading profile..." />
-            </div>
-        );
-    }
+    if (!username) return <div className="container"><Header />No user specified</div>;
+    if (loadingProfile && !profile) return <div className="container"><Header /><LoadingOverlay message="Loading profile..." /></div>;
+    if (!profile) return <div className="container"><Header /><div className="card" style={{ padding: 40, textAlign: 'center' }}>User not found</div></div>;
 
-    if (!profile && !profileLoading) {
-        return (
-            <div className="container">
-                <Header />
-                <div className="card" style={{ textAlign: 'center', padding: 40 }}>
-                    User not found
-                </div>
-            </div>
-        );
-    }
-
-    // Since we returned above if !profile, we can safely access profile fields now
-    // but Typescript might still complain if not explicitly narrowed.
-    const lastSeenDate = profile?.lastSeen ? new Date(profile.lastSeen) : null;
-    const isOnline = lastSeenDate && (new Date().getTime() - lastSeenDate.getTime() < 5 * 60 * 1000);
-    const isSelf = viewer?.id === profile?.id;
-    const isFriend = profile?.isFriend || profile?.friends?.some(f => f.friendUserId === viewer?.id);
+    const isOnline = profile.lastSeen && (new Date().getTime() - new Date(profile.lastSeen).getTime() < 5 * 60 * 1000);
+    const isFriend = profile.isFriend || friends.some(f => f.friendUserId === viewer?.id);
 
     return (
         <div className="container page-fade">
             <Header />
+            <ImageViewer
+                isOpen={viewerState.isOpen}
+                images={viewerState.images}
+                initialIndex={viewerState.index}
+                onClose={() => setViewerState(p => ({ ...p, isOpen: false }))}
+            />
 
-            {/* Profile Header (Steam Style) */}
+            {/* Top Profile Card */}
             <div className="card" style={{
-                background: 'linear-gradient(to bottom, rgba(35, 42, 53, 0.8), rgba(23, 26, 33, 0.9))',
-                padding: '24px',
-                borderRadius: '8px 8px 0 0',
-                borderBottom: 'none',
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: 24,
                 position: 'relative',
-                overflow: 'hidden'
+                overflow: 'hidden',
+                padding: 0,
+                border: 'none',
+                background: 'linear-gradient(to bottom, #1e242e, #171a21)'
             }}>
-                <div style={{ position: 'relative' }}>
-                    {profile?.avatarUrl ? (
-                        <img
-                            src={profile.avatarUrl}
-                            alt={username}
-                            style={{
-                                width: 164,
-                                height: 164,
-                                border: '2px solid rgba(255,255,255,0.1)',
-                                boxShadow: '0 0 10px rgba(0,0,0,0.5)',
-                                objectFit: 'cover'
-                            }}
-                        />
-                    ) : (
+                {/* Banner Effect */}
+                <div style={{ height: 120, background: 'linear-gradient(45deg, var(--accent-2), var(--accent))', opacity: 0.1 }}></div>
+
+                <div style={{ padding: '0 24px 24px', marginTop: -60, display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'flex-end' }}>
+
+                    {/* Avatar */}
+                    <div style={{ position: 'relative' }}>
                         <div style={{
-                            width: 164,
-                            height: 164,
-                            background: 'var(--accent)',
-                            display: 'grid',
-                            placeItems: 'center',
-                            fontSize: 64,
-                            fontWeight: 'bold',
-                            border: '2px solid rgba(255,255,255,0.1)'
+                            width: 128, height: 128,
+                            borderRadius: 4,
+                            background: '#171a21',
+                            padding: 4,
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
                         }}>
-                            {username[0]?.toUpperCase()}
+                            {profile.avatarUrl ? (
+                                <img src={profile.avatarUrl} alt={username} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 2 }} />
+                            ) : (
+                                <div style={{ width: '100%', height: '100%', background: 'var(--accent)', borderRadius: 2, display: 'grid', placeItems: 'center', fontSize: 48, fontWeight: 'bold' }}>
+                                    {username[0]?.toUpperCase()}
+                                </div>
+                            )}
                         </div>
-                    )}
-                    {isOnline && (
-                        <div style={{
-                            position: 'absolute',
-                            bottom: -5,
-                            right: -5,
-                            width: 20,
-                            height: 20,
-                            background: '#57cbde',
-                            borderRadius: '50%',
-                            border: '3px solid #171a21',
-                            boxShadow: '0 0 10px #57cbde'
-                        }} title="Online" />
-                    )}
-                </div>
+                        {isOnline && <div style={{
+                            position: 'absolute', bottom: 8, right: 8,
+                            width: 16, height: 16, borderRadius: '50%',
+                            background: '#57cbde', border: '3px solid #171a21',
+                            boxShadow: '0 0 8px #57cbde'
+                        }} title="Online" />}
+                    </div>
 
-                <div style={{ flex: 1, minWidth: 200 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div>
-                            <h1 style={{ margin: 0, fontSize: 32, fontWeight: 700, color: '#fff', textShadow: '0 0 5px rgba(0,0,0,0.5)' }}>{profile?.username}</h1>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
-                                <span style={{
-                                    color: isOnline ? '#57cbde' : '#898989',
-                                    fontSize: 14,
-                                    fontWeight: 600
-                                }}>
-                                    {isOnline ? 'Online' : profile?.lastSeen ? `Last Online: ${new Date(profile.lastSeen).toLocaleString()}` : 'Never active'}
+                    {/* Info */}
+                    <div style={{ flex: 1, marginBottom: 10 }}>
+                        <h1 style={{ fontSize: 32, margin: '0 0 4px', color: '#fff' }}>{profile.username}</h1>
+                        <div style={{ display: 'flex', gap: 16, fontSize: 13, color: '#888' }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <Calendar size={14} /> Joined {new Date(profile.created).toLocaleDateString()}
+                            </span>
+                            {profile.lastSeen && (
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: isOnline ? '#57cbde' : '#888' }}>
+                                    <Clock size={14} /> {isOnline ? 'Online Now' : `Last seen ${new Date(profile.lastSeen).toLocaleDateString()}`}
                                 </span>
-                            </div>
+                            )}
                         </div>
+                    </div>
 
+                    {/* Actions */}
+                    <div style={{ marginBottom: 10, display: 'flex', gap: 8 }}>
                         {!isSelf && !isFriend && (
-                            <button className="button" onClick={handleAddFriend} disabled={actionLoading} style={{ padding: '8px 24px' }}>
-                                {actionLoading ? <div className="spinner" style={{ width: 14, height: 14, margin: 0 }}></div> : 'Add Friend'}
+                            <button className="button" onClick={handleAddFriend} disabled={actionLoading}>
+                                <UserPlus size={16} style={{ marginRight: 6 }} /> Add Friend
                             </button>
                         )}
                         {isFriend && !isSelf && (
-                            <div style={{ padding: '6px 12px', background: 'rgba(57, 203, 222, 0.1)', border: '1px solid rgba(57, 203, 222, 0.3)', borderRadius: 4, fontSize: 13, color: '#57cbde', fontWeight: 600 }}>✓ Friends</div>
+                            <button className="button ghost" disabled>
+                                <Check size={16} style={{ marginRight: 6 }} /> Friends
+                            </button>
                         )}
-                    </div>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10 }}>
-                    <div style={{
-                        background: 'rgba(0,0,0,0.3)',
-                        padding: '12px 16px',
-                        borderRadius: 4,
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        textAlign: 'right',
-                        minWidth: 100,
-                        cursor: 'pointer'
-                    }} onClick={() => setShowStats(true)}>
-                        <div style={{ fontSize: 24, fontWeight: 700, color: '#fff' }}>Level <span style={{ color: 'var(--accent)' }}>{profile?.level}</span></div>
-                        <div style={{ fontSize: 12, opacity: 0.6 }}>XP: {profile?.exp}</div>
-                        <div style={{ fontSize: 10, color: 'var(--accent)', marginTop: 4, fontWeight: 700, textTransform: 'uppercase' }}>View Stats</div>
+                        <button className="button ghost" onClick={() => setShowStats(true)}>
+                            Level {profile.level}
+                        </button>
                     </div>
                 </div>
             </div>
 
-            {/* Stats Modal */}
-            {showStats && (
-                <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && setShowStats(false)}>
-                    <div className="modal-content" style={{ textAlign: 'center' }}>
-                        <h2 style={{ marginTop: 0 }}>User Stats</h2>
-                        <div style={{ fontSize: 48, fontWeight: 800, color: 'var(--accent)', margin: '10px 0' }}>{profile?.level}</div>
-                        <div style={{ fontSize: 14, opacity: 0.7, marginBottom: 20 }}>Current Level</div>
+            {/* Content Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 24, marginTop: 24, alignItems: 'start' }}>
 
-                        <div style={{ background: 'rgba(0,0,0,0.2)', padding: 15, borderRadius: 8, marginBottom: 15 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                                <span>Experience</span>
-                                <span style={{ fontWeight: 700 }}>{profile?.exp} XP</span>
-                            </div>
-                            <div style={{ height: 6, background: 'rgba(255,255,255,0.1)', borderRadius: 3, overflow: 'hidden' }}>
-                                <div style={{ height: '100%', width: `${(profile?.exp || 0) % 100}%`, background: 'var(--accent)' }}></div>
-                            </div>
-                        </div>
+                {/* Left Sidebar */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                            <div className="card" style={{ padding: 10, background: 'rgba(255,255,255,0.03)' }}>
-                                <div style={{ fontSize: 18, fontWeight: 700 }}>{profile?.totalEntries}</div>
-                                <div style={{ fontSize: 11, opacity: 0.5 }}>Total Diary</div>
+                    {/* Stats Widget */}
+                    <div className="card">
+                        <h3 style={{ fontSize: 14, textTransform: 'uppercase', color: '#888', margin: '0 0 16px' }}>Statistics</h3>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                            <div style={{ background: 'rgba(255,255,255,0.05)', padding: 12, borderRadius: 4 }}>
+                                <div style={{ fontSize: 20, fontWeight: 700 }}>{profile.totalEntries}</div>
+                                <div style={{ fontSize: 12, opacity: 0.5 }}>Diary Entries</div>
                             </div>
-                            <div className="card" style={{ padding: 10, background: 'rgba(255,255,255,0.03)' }}>
-                                <div style={{ fontSize: 18, fontWeight: 700 }}>{profile?.friends?.length || 0}</div>
-                                <div style={{ fontSize: 11, opacity: 0.5 }}>Friends</div>
+                            <div style={{ background: 'rgba(255,255,255,0.05)', padding: 12, borderRadius: 4 }}>
+                                <div style={{ fontSize: 20, fontWeight: 700 }}>{friends.length}</div>
+                                <div style={{ fontSize: 12, opacity: 0.5 }}>Friends</div>
                             </div>
                         </div>
-
-                        <div style={{ marginTop: 20, fontSize: 12, opacity: 0.5 }}>
-                            Member since {profile?.created ? new Date(profile.created).toLocaleDateString() : 'Unknown'}
-                        </div>
-
-                        <button className="button ghost" onClick={() => setShowStats(false)} style={{ width: '100%', marginTop: 20 }}>Close</button>
                     </div>
-                </div>
-            )}
 
-            {/* Profile Body */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, marginTop: 2 }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                    {/* Friend Requests (Only for self) */}
-                    {isSelf && requests.length > 0 && (
-                        <div className="card" style={{ borderTop: 'none', background: 'rgba(57, 203, 222, 0.1)', border: '1px solid rgba(57, 203, 222, 0.3)' }}>
-                            <h3 style={{ textTransform: 'uppercase', fontSize: 14, color: '#57cbde', marginTop: 0, borderBottom: '1px solid rgba(57, 203, 222, 0.2)', paddingBottom: 10 }}>
-                                Pending Friend Requests
-                            </h3>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                {requests.map((r, i) => (
-                                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                            <div style={{ width: 32, height: 32, borderRadius: 4, background: 'var(--accent)', display: 'grid', placeItems: 'center', fontWeight: 'bold' }}>{r.requesterUsername[0].toUpperCase()}</div>
-                                            <span style={{ fontWeight: 600 }}>{r.requesterUsername}</span>
+                    {/* Friends Widget */}
+                    <div className="card">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                            <h3 style={{ fontSize: 14, textTransform: 'uppercase', color: '#888', margin: 0 }}>Friends</h3>
+                            <button className="link" style={{ fontSize: 12 }} onClick={() => setShowFriendsModal(true)}>See All</button>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                            {friends.slice(0, 9).map((f: any, i: number) => (
+                                <Link key={i} href={`/profile?u=${encodeURIComponent(f.friendUsername)}`}>
+                                    <div style={{ aspectRatio: '1/1', background: 'rgba(255,255,255,0.1)', borderRadius: 4, overflow: 'hidden' }} title={f.friendUsername}>
+                                        <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', background: 'var(--accent)', fontSize: 18, fontWeight: 'bold' }}>
+                                            {f.friendUsername[0].toUpperCase()}
                                         </div>
-                                        <div style={{ display: 'flex', gap: 8 }}>
-                                            <button className="button" style={{ padding: '4px 12px', fontSize: 12 }} onClick={() => handleAccept(r.requesterId)} disabled={actionLoading}>
-                                                {actionLoading ? '...' : 'Accept'}
-                                            </button>
-                                            <button className="button danger" style={{ padding: '4px 12px', fontSize: 12 }} onClick={() => handleDecline(r.requesterId)} disabled={actionLoading}>
-                                                {actionLoading ? '...' : 'Decline'}
-                                            </button>
+                                    </div>
+                                </Link>
+                            ))}
+                        </div>
+                        {friends.length === 0 && <div className="helper">No friends yet.</div>}
+                    </div>
+
+                    {/* Requests (Self only) */}
+                    {isSelf && friendRequests.length > 0 && (
+                        <div className="card" style={{ borderColor: 'var(--accent)' }}>
+                            <h3 style={{ fontSize: 14, textTransform: 'uppercase', color: 'var(--accent)', margin: '0 0 16px' }}>Requests</h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                {friendRequests.map((r, i) => (
+                                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <span style={{ fontWeight: 600 }}>{r.requesterUsername}</span>
+                                        <div style={{ display: 'flex', gap: 4 }}>
+                                            <button className="button" style={{ padding: 6 }} onClick={() => handleAccept(r.requesterId)}><Check size={14} /></button>
+                                            <button className="button ghost" style={{ padding: 6 }} onClick={() => handleDecline(r.requesterId)}><X size={14} /></button>
                                         </div>
                                     </div>
                                 ))}
@@ -288,109 +293,127 @@ const ProfileContent = () => {
                         </div>
                     )}
 
-                    {/* Last Diary Entry */}
-                    <div className="card" style={{ borderTop: isSelf && requests.length > 0 ? '' : 'none', background: 'rgba(23, 26, 33, 0.4)' }}>
-                        <h3 style={{ textTransform: 'uppercase', fontSize: 14, color: '#898989', marginTop: 0, borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: 10 }}>
-                            Pinned / Last Entry
-                        </h3>
-                        {profile?.lastEntry ? (
-                            <Link href={`/entry?u=${encodeURIComponent(username)}&d=${toDisplayDate(profile.lastEntry.date)}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-                                <div style={{
-                                    background: 'rgba(0,0,0,0.2)',
-                                    padding: 20,
-                                    borderRadius: 4,
-                                    transition: 'background 0.2s',
-                                }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'} onMouseLeave={e => e.currentTarget.style.background = 'rgba(0,0,0,0.2)'}>
-                                    <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--accent-2)', marginBottom: 5 }}>{profile.lastEntry.title || 'Untitled'}</div>
-                                    <div className="helper" style={{ fontSize: 13 }}>Posted on {toDisplayDate(profile?.lastEntry.date)}</div>
-                                </div>
-                            </Link>
-                        ) : (
-                            <div className="helper">No public entries to show.</div>
-                        )}
-                    </div>
-
-                    {/* Entry History */}
-                    <div className="card" style={{ background: 'rgba(23, 26, 33, 0.4)' }}>
-                        <h3 style={{ textTransform: 'uppercase', fontSize: 14, color: '#898989', marginTop: 0, borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: 10 }}>
-                            Public Diary History
-                        </h3>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                            {entriesLoading && <div className="helper">Loading entries...</div>}
-                            {entries.map((e, i) => (
-                                <Link key={i} href={`/entry?u=${encodeURIComponent(username)}&d=${toDisplayDate(e.date)}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-                                    <div style={{
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        alignItems: 'center',
-                                        padding: '10px 15px',
-                                        background: 'rgba(0,0,0,0.1)',
-                                        borderRadius: 4,
-                                        fontSize: 14
-                                    }}>
-                                        <span style={{ fontWeight: 500 }}>{e.title || 'Untitled'}</span>
-                                        <span className="helper" style={{ fontSize: 12 }}>{toDisplayDate(e.date)}</span>
-                                    </div>
-                                </Link>
-                            ))}
-                            {entries.length === 0 && !entriesLoading && <div className="helper">No public entries found.</div>}
-                        </div>
-                    </div>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                    {/* Stats */}
-                    <div className="card" style={{ background: 'rgba(23, 26, 33, 0.4)' }}>
-                        <h3 style={{ textTransform: 'uppercase', fontSize: 14, color: '#898989', marginTop: 0, borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: 10 }}>
-                            Stats
-                        </h3>
-                        <div style={{ fontSize: 24, fontWeight: 700, color: '#fff' }}>{profile?.totalEntries}</div>
-                        <div className="helper" style={{ fontSize: 12, textTransform: 'uppercase' }}>Total Diary Entries</div>
+                {/* Right Main Feed */}
+                <div>
+                    <h3 style={{ fontSize: 18, margin: '0 0 16px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <BookOpen size={20} /> Diary Timeline
+                    </h3>
 
-                        <div style={{ marginTop: 20, fontSize: 13 }}>
-                            Joined: {profile?.created ? new Date(profile.created).toLocaleDateString() : 'Unknown'}
+                    {entries.length === 0 && !loadingEntries && (
+                        <div className="card" style={{ padding: 40, textAlign: 'center', color: '#888' }}>
+                            No public entries found.
                         </div>
-                    </div>
+                    )}
 
-                    {/* Friends */}
-                    <div className="card" style={{ background: 'rgba(23, 26, 33, 0.4)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: 10, marginBottom: 15 }}>
-                            <h3 style={{ textTransform: 'uppercase', fontSize: 14, color: '#898989', margin: 0 }}>
-                                Friends
-                            </h3>
-                            <span style={{ fontSize: 12, color: '#fff' }}>{profile?.friends?.length || 0}</span>
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
-                            {profile?.friends?.map((f, i) => (
-                                <Link key={i} href={`/profile?u=${encodeURIComponent(f.friendUsername)}`} title={f.friendUsername}>
-                                    <div style={{
-                                        aspectRatio: '1/1',
-                                        background: 'var(--accent)',
-                                        borderRadius: 4,
-                                        overflow: 'hidden',
-                                        border: '1px solid rgba(255,255,255,0.1)'
-                                    }}>
-                                        <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', fontWeight: 'bold' }}>
-                                            {f.friendUsername[0]?.toUpperCase()}
-                                        </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        {entries.map((entry) => (
+                            <div key={entry.entryId} className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                                {/* Date Header */}
+                                <div style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border)', fontSize: 13, color: '#888', display: 'flex', justifyContent: 'space-between' }}>
+                                    <span>{toDisplayDate(entry.date)}</span>
+                                    <span>{entry.privacy}</span>
+                                </div>
+
+                                <div style={{ padding: 24 }}>
+                                    <Link href={`/entry?u=${encodeURIComponent(username)}&d=${toDisplayDate(entry.date)}`} className="link" style={{ fontSize: 20, fontWeight: 700, display: 'block', marginBottom: 12 }}>
+                                        {entry.title || 'Untitled'}
+                                    </Link>
+                                    <div style={{ lineHeight: 1.6, fontSize: 15, color: '#ccc', marginBottom: 16 }}>
+                                        {entry.content.length > 300 ? entry.content.slice(0, 300) + '...' : entry.content}
                                     </div>
-                                </Link>
-                            ))}
-                        </div>
-                        {profile?.friends?.length === 0 && <div className="helper">No friends added.</div>}
+
+                                    {/* Picture Preview */}
+                                    {entry.pictures && entry.pictures.length > 0 && (
+                                        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8 }}>
+                                            {entry.pictures.slice(0, 4).map((pic, idx) => (
+                                                <div
+                                                    key={idx}
+                                                    className="card"
+                                                    style={{
+                                                        minWidth: 120, height: 120, padding: 0, border: 'none',
+                                                        backgroundImage: `url(${pic})`, backgroundSize: 'cover', backgroundPosition: 'center',
+                                                        cursor: 'pointer'
+                                                    }}
+                                                    onClick={() => openViewer(entry.pictures || [], idx)}
+                                                />
+                                            ))}
+                                            {entry.pictures.length > 4 && (
+                                                <div style={{ minWidth: 120, height: 120, display: 'grid', placeItems: 'center', background: 'rgba(255,255,255,0.05)', borderRadius: 8 }}>
+                                                    +{entry.pictures.length - 4} more
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    <div style={{ marginTop: 16 }}>
+                                        <Link href={`/entry?u=${encodeURIComponent(username)}&d=${toDisplayDate(entry.date)}`} className="button ghost" style={{ fontSize: 13, padding: '6px 16px' }}>
+                                            Read Full Entry
+                                        </Link>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
                     </div>
+
+                    {hasMore && (
+                        <div style={{ marginTop: 24, textAlign: 'center' }}>
+                            <button className="button ghost" onClick={() => loadEntries(entries.length)} disabled={loadingEntries} style={{ width: '100%' }}>
+                                {loadingEntries ? 'Loading...' : 'Load More Entries'}
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
 
-            <div className="footer">Make By PEPSEALSEA ©2025</div>
+            {/* Friend List Modal */}
+            {showFriendsModal && (
+                <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && setShowFriendsModal(false)}>
+                    <div className="modal-content" style={{ maxWidth: 500, height: '80vh', display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                            <h2 style={{ margin: 0 }}>Friends ({friends.length})</h2>
+                            <button className="button ghost" onClick={() => setShowFriendsModal(false)}><X size={20} /></button>
+                        </div>
+                        <div style={{ flex: 1, overflowY: 'auto' }}>
+                            {friends.map((f, i) => (
+                                <Link key={i} href={`/profile?u=${encodeURIComponent(f.friendUsername)}`} style={{ textDecoration: 'none' }} onClick={() => setShowFriendsModal(false)}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
+                                        <div style={{ width: 40, height: 40, background: 'var(--accent)', borderRadius: 4, display: 'grid', placeItems: 'center', fontWeight: 'bold', color: '#fff' }}>
+                                            {f.friendUsername[0].toUpperCase()}
+                                        </div>
+                                        <div style={{ color: '#fff', fontWeight: 600 }}>{f.friendUsername}</div>
+                                    </div>
+                                </Link>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Stats Modal */}
+            {showStats && (
+                <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && setShowStats(false)}>
+                    <div className="modal-content" style={{ textAlign: 'center' }}>
+                        <h2 style={{ marginTop: 0 }}>Stats</h2>
+                        <div style={{ fontSize: 64, fontWeight: 900, color: 'var(--accent)' }}>{profile.level}</div>
+                        <div style={{ opacity: 0.7 }}>Current Level</div>
+                        <div style={{ margin: '24px 0', height: 8, background: 'rgba(255,255,255,0.1)', borderRadius: 4, overflow: 'hidden' }}>
+                            <div style={{ width: `${profile.exp % 100}%`, height: '100%', background: 'var(--accent)' }} />
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', opacity: 0.7, fontSize: 13 }}>
+                            <span>{profile.exp} XP</span>
+                            <span>Next Level: {Math.floor(profile.exp / 100) * 100 + 100} XP</span>
+                        </div>
+                        <button className="button ghost" onClick={() => setShowStats(false)} style={{ width: '100%', marginTop: 24 }}>Close</button>
+                    </div>
+                </div>
+            )}
+
         </div>
     );
-}
+};
 
 export default function ProfilePage() {
-    return (
-        <Suspense fallback={<div>Loading...</div>}>
-            <ProfileContent />
-        </Suspense>
-    );
+    return <Suspense fallback={<div>Loading...</div>}><ProfileContent /></Suspense>;
 }
