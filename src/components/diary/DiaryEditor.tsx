@@ -276,6 +276,16 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
 
             const res = await api.post(payload);
             if (res.success) {
+                // If there were pictures, archive them in Drive
+                if (res.driveIds && Array.isArray(res.driveIds) && res.driveIds.length > 0) {
+                    try {
+                        await api.archiveFiles(res.driveIds);
+                    } catch (driveErr) {
+                        console.error('Failed to archive files in Drive', driveErr);
+                        toast('Deleted entry, but Drive files move failed', 'error');
+                    }
+                }
+
                 toast('Deleted');
                 clearForm();
                 onEntryChange();

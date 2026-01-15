@@ -630,6 +630,28 @@ function updateDiaryEntry(params) {
   }
 }
 
+
+
+/**
+ * Deletes picture metadata from the Pictures sheet and returns the Drive IDs.
+ */
+function deleteEntryPictures(entryId) {
+  if (!entryId) return [];
+  const sheet = getOrCreatePicturesSheet();
+  const data = sheet.getDataRange().getValues();
+  const driveIds = [];
+
+  // Iterate backwards to safely delete multiple rows
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (data[i][2] === entryId) {
+      const driveId = data[i][3];
+      if (driveId) driveIds.push(driveId);
+      sheet.deleteRow(i + 1);
+    }
+  }
+  return driveIds;
+}
+
 function deleteDiaryEntry(params) {
   try {
     const userId = params.userId;
@@ -644,6 +666,11 @@ function deleteDiaryEntry(params) {
     const row = dIdx.byDate[date] || null;
     if (row) {
       const existing = diarySheet.getRange(row, 1, 1, Math.max(9, diarySheet.getLastColumn())).getValues()[0];
+      const entryId = existing[0];
+
+      // Delete pictures and get their drive IDs
+      const driveIds = deleteEntryPictures(entryId);
+
       diarySheet.deleteRow(row);
       try {
         cacheRemove('user:entry:' + userId + ':' + date);
@@ -653,7 +680,8 @@ function deleteDiaryEntry(params) {
         cacheRemove('pub:list:' + String(existing[2] || '').trim().toLowerCase() + ':');
         invalidateDiaryIndex(userId);
       } catch (e) { }
-      return createResponse(true, 'Diary entry deleted successfully');
+
+      return createResponse(true, 'Diary entry deleted successfully', { driveIds: driveIds });
     }
 
     return createResponse(false, 'Diary entry not found');
@@ -744,6 +772,10 @@ function deleteDiaryEntryById(params) {
         const username = data[i][2];
         const date = normalizeDateCell(data[i][3]);
         const userId = data[i][1];
+
+        // Delete pictures and get their drive IDs
+        const driveIds = deleteEntryPictures(entryId);
+
         sheet.deleteRow(i + 1);
         try {
           cacheRemove('user:entry:' + userId + ':' + date);
@@ -751,14 +783,15 @@ function deleteDiaryEntryById(params) {
           cacheRemove('pub:entry:' + String(username || '').trim().toLowerCase() + ':' + date);
           cacheRemove('pub:list:');
           cacheRemove('pub:list:' + String(username || '').trim().toLowerCase() + ':');
+          invalidateDiaryIndex(userId);
         } catch (e) { }
-        return createResponse(true, 'Entry deleted', { entryId: entryId, date: date });
+        return createResponse(true, 'Diary entry deleted successfully', { driveIds: driveIds });
       }
     }
     return createResponse(false, 'Entry not found');
   } catch (e) {
     Logger.log('Error in deleteDiaryEntryById: ' + e.toString());
-    return createResponse(false, 'Failed to delete');
+    return createResponse(false, 'Failed to delete diary entry');
   }
 }
 

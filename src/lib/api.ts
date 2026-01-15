@@ -178,7 +178,8 @@ export const api = {
         api.post({ action: 'addPictureMetadata', userId, entryId, driveId, url }),
     getEntryPictures: (entryId: string) => api.get({ action: 'getEntryPictures', entryId }),
     deletePicture: (pictureId: string, userId: string) => api.post({ action: 'deletePicture', pictureId, userId }),
-    updatePictureOrder: (userId: string, pictureIds: string[]) => api.post({ action: 'updatePictureOrder', userId, pictureIds: JSON.stringify(pictureIds) })
+    updatePictureOrder: (userId: string, pictureIds: string[]) => api.post({ action: 'updatePictureOrder', userId, pictureIds: JSON.stringify(pictureIds) }),
+    archiveFiles: (driveIds: string[]) => apiRequest(DOWNLOAD_API_URL, 'POST', { action: 'archiveFiles', driveIds: JSON.stringify(driveIds) }, true)
 };
 
 

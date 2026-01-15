@@ -4,6 +4,7 @@
  */
 
 const folderId = "1qOsEpoiMWZc-2T7y59a8945LANumqD47";
+const removedFolderId = "1NQQsQ8GgmjUoW71KazpAN1C1cncQHHgV";
 
 function doGet(e) {
   return createResponse(true, 'Upload service is online');
@@ -63,6 +64,46 @@ function doPost(e) {
     // Special handling for text-only base64 upload (CORS friendly)
     // If request body is a plain string and action is in URL
     var action = params.action || postData.action;
+
+    // --- NEW ARCHIVE ACTION ---
+    if (action === 'archiveFiles') {
+      var driveIds = params.driveIds || postData.driveIds;
+      if (typeof driveIds === 'string') {
+        try { driveIds = JSON.parse(driveIds); } catch (e) { driveIds = driveIds.split(','); }
+      }
+
+      if (!Array.isArray(driveIds) || driveIds.length === 0) {
+        return createResponse(false, 'No driveIds provided for archiving');
+      }
+
+      var archivedList = [];
+      var errorList = [];
+      var destFolder = DriveApp.getFolderById(removedFolderId);
+
+      for (var i = 0; i < driveIds.length; i++) {
+        var id = driveIds[i];
+        try {
+          var file = DriveApp.getFileById(id);
+          // Move file: add to new folder and remove from old folders
+          destFolder.addFile(file);
+          var parents = file.getParents();
+          while (parents.hasNext()) {
+            var p = parents.next();
+            if (p.getId() !== removedFolderId) {
+              p.removeFile(file);
+            }
+          }
+          archivedList.push(id);
+        } catch (err) {
+          errorList.push({ id: id, error: err.toString() });
+        }
+      }
+
+      return createResponse(true, 'Archived ' + archivedList.length + ' files', {
+        archivedCount: archivedList.length,
+        errors: errorList
+      });
+    }
 
     // Check if this is a raw text body upload (simple request)
     if (action === 'upload' && e.postData && e.postData.contents && typeof e.postData.contents === 'string' && !isMultipart && !postData.action) {
