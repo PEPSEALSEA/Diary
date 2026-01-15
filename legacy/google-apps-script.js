@@ -886,24 +886,36 @@ function getUserDiaryEntries(userId, month, year) {
       return ContentService.createTextOutput(JSON.stringify(cached)).setMimeType(ContentService.MimeType.JSON);
     }
     const data = getOrCreateDiaryEntriesSheet().getDataRange().getValues();
+
+    // FETCH ALL PICTURES IN BATCH
+    const allPictures = getAllUserPictures(userId);
+    const picMap = {};
+    allPictures.forEach(p => {
+      if (!picMap[p.entryId]) picMap[p.entryId] = [];
+      picMap[p.entryId].push(p);
+    });
+
     const userEntries = [];
     for (let i = 1; i < data.length; i++) {
       if (data[i][1] === userId) {
+        const entryId = data[i][0];
         const entryDate = normalizeDateCell(data[i][3]);
         if (month && !entryDate.startsWith(month)) continue;
         if (year && !entryDate.startsWith(year)) continue;
         userEntries.push({
-          entryId: data[i][0],
+          entryId: entryId,
           date: entryDate,
           title: data[i][4],
           content: data[i][5],
-          isPrivate: data[i][6],
+          privacy: normalizePrivacy(data[i][6], null),
           created: data[i][7],
-          lastModified: data[i][8]
+          lastModified: data[i][8],
+          pictures: picMap[entryId] || []
         });
       }
     }
     userEntries.sort((a, b) => new Date(b.date) - new Date(a.date));
+
     const resp = {
       success: true,
       message: 'Diary entries retrieved successfully',
@@ -1155,6 +1167,27 @@ function getOrCreateDiaryEntriesSheet() {
     Logger.log('Error accessing diary entries sheet: ' + error.toString());
     throw new Error('Cannot access Google Sheet. Check your SHEET_ID.');
   }
+}
+
+/**
+ * Returns all pictures for a specific user to facilitate batch fetching.
+ */
+function getAllUserPictures(userId) {
+  if (!userId) return [];
+  const sheet = getOrCreatePicturesSheet();
+  const data = sheet.getDataRange().getValues();
+  const pictures = [];
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][1] === userId) {
+      pictures.push({
+        pictureId: data[i][0],
+        entryId: data[i][2],
+        url: data[i][4],
+        order: data[i][6] || 0
+      });
+    }
+  }
+  return pictures;
 }
 
 function getOrCreatePicturesSheet() {

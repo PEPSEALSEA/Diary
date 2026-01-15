@@ -180,7 +180,16 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
             date: entry.date
         };
         setIsDirty(false);
-        loadPictures(entry.entryId!);
+
+        // Batch Improvement: Use the pictures already attached to the entry!
+        // This avoids extra network calls when switching entries for the same date.
+        if (entry.pictures && Array.isArray(entry.pictures)) {
+            setPictures(entry.pictures);
+        } else if (entry.entryId) {
+            loadPictures(entry.entryId);
+        } else {
+            setPictures([]);
+        }
     };
 
     const loadPictures = async (id: string) => {
