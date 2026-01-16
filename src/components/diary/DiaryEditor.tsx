@@ -33,6 +33,29 @@ interface DiaryEditorProps {
     refreshTrigger?: number;
 }
 
+interface UploadQueueItem {
+    id: string;
+    file: File;
+    progress: number;
+    status: 'waiting' | 'uploading' | 'processing' | 'saving' | 'done' | 'error';
+}
+
+function UploadItem({ item }: { item: UploadQueueItem }) {
+    return (
+        <div className="upload-item card" style={{ padding: 8 }}>
+            <div className="spinner" style={{ width: 16, height: 16, marginBottom: 8 }}></div>
+            <div className="truncate" style={{ width: '100%', marginBottom: 4 }}>{item.file.name}</div>
+            <div style={{ color: 'var(--accent-2)', fontWeight: 'bold' }}>{item.progress}%</div>
+            <div className="progress-container">
+                <div className="progress-bar" style={{ width: `${item.progress}%` }}></div>
+            </div>
+            <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 4, textTransform: 'uppercase' }}>
+                {item.status}
+            </div>
+        </div>
+    );
+}
+
 function SortablePicture({ picture, onDelete, onView }: { picture: any, onDelete: (id: string) => void, onView: () => void }) {
     const {
         attributes,
@@ -90,6 +113,7 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
     const [entryId, setEntryId] = useState<string | null>(null);
     const [pictures, setPictures] = useState<any[]>([]);
     const [uploading, setUploading] = useState(false);
+    const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([]);
 
     const [viewer, setViewer] = useState<{ isOpen: boolean, images: string[], index: number }>({ isOpen: false, images: [], index: 0 });
 
@@ -398,23 +422,50 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
 
         setUploading(true);
         const fileArray = Array.from(files);
+
+        // Initialize queue
+        const initialQueue: UploadQueueItem[] = fileArray.map((f, i) => ({
+            id: `upload-${i}-${Date.now()}`,
+            file: f,
+            progress: 0,
+            status: 'waiting'
+        }));
+        setUploadQueue(initialQueue);
+
         let successCount = 0;
 
-        for (const file of fileArray) {
+        for (let i = 0; i < fileArray.length; i++) {
+            const file = fileArray[i];
+            const currentQueueId = initialQueue[i].id;
+
+            // Update status to uploading
+            setUploadQueue(prev => prev.map(item => item.id === currentQueueId ? { ...item, status: 'uploading' } : item));
+
             try {
-                const uploadRes = await api.uploadPicture(file);
+                const uploadRes = await api.uploadPicture(file, (percent) => {
+                    setUploadQueue(prev => prev.map(item =>
+                        item.id === currentQueueId ? { ...item, progress: percent } : item
+                    ));
+                });
+
                 if (uploadRes.success && uploadRes.driveId) {
+                    setUploadQueue(prev => prev.map(item => item.id === currentQueueId ? { ...item, status: 'saving', progress: 100 } : item));
+
                     const metadataRes = await api.addPictureMetadata(user.id, currentEntryId!, uploadRes.driveId, uploadRes.url);
                     if (metadataRes.success) {
                         successCount++;
+                        setUploadQueue(prev => prev.map(item => item.id === currentQueueId ? { ...item, status: 'done' } : item));
                     } else {
                         console.error('Failed to add metadata for', file.name, metadataRes.error);
+                        setUploadQueue(prev => prev.map(item => item.id === currentQueueId ? { ...item, status: 'error' } : item));
                     }
                 } else {
                     console.error('Upload failed for', file.name, uploadRes.error || uploadRes.message || 'Unknown error');
+                    setUploadQueue(prev => prev.map(item => item.id === currentQueueId ? { ...item, status: 'error' } : item));
                 }
             } catch (err: any) {
                 console.error('Upload failed for', file.name, err);
+                setUploadQueue(prev => prev.map(item => item.id === currentQueueId ? { ...item, status: 'error' } : item));
             }
         }
 
@@ -422,9 +473,15 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
             toast(`Uploaded ${successCount} picture${successCount > 1 ? 's' : ''}`);
             loadPictures(currentEntryId!);
         } else {
-            toast(`Failed to upload pictures${fileArray.length > 1 ? ` (tried ${fileArray.length} files)` : ''}. Check console for details.`, 'error');
+            toast(`Failed to upload pictures${fileArray.length > 1 ? ` (tried ${fileArray.length} files)` : ''}.`, 'error');
         }
-        setUploading(false);
+
+        // Small delay to let the user see the "done" status before clearing
+        setTimeout(() => {
+            setUploadQueue([]);
+            setUploading(false);
+        }, 1000);
+
         // Reset input
         e.target.value = '';
     };
@@ -525,20 +582,27 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
                         ))}
                     </SortableContext>
                 </DndContext>
-                <label className="card" style={{
-                    cursor: 'pointer',
-                    width: 100,
-                    height: 100,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    border: '2px dashed var(--border)',
-                    margin: 0,
-                    transition: 'border-color 0.2s'
-                }}>
-                    {uploading ? <div className="spinner" style={{ width: 20, height: 20 }}></div> : <span style={{ fontSize: 24, color: 'var(--muted)' }}>+</span>}
-                    <input type="file" multiple accept="image/*" onChange={handleFileUpload} style={{ display: 'none' }} disabled={uploading} />
-                </label>
+
+                {uploadQueue.map(item => (
+                    <UploadItem key={item.id} item={item} />
+                ))}
+
+                {!uploading && (
+                    <label className="card" style={{
+                        cursor: 'pointer',
+                        width: 100,
+                        height: 100,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        border: '2px dashed var(--border)',
+                        margin: 0,
+                        transition: 'border-color 0.2s'
+                    }}>
+                        <span style={{ fontSize: 24, color: 'var(--muted)' }}>+</span>
+                        <input type="file" multiple accept="image/*" onChange={handleFileUpload} style={{ display: 'none' }} disabled={uploading} />
+                    </label>
+                )}
             </div>
             <div className="spacer"></div>
 
