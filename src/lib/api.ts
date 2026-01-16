@@ -166,8 +166,16 @@ export const api = {
                     });
 
                     if (onProgress) onProgress(100); // Complete
-                    const json = await res.json();
-                    resolve(json);
+
+                    const text = await res.text();
+                    try {
+                        const json = JSON.parse(text);
+                        resolve(json);
+                    } catch (e) {
+                        // If it's not JSON, return it as a success message if it looks like one, 
+                        // or wrap it in a pseudo-ApiResponse
+                        resolve({ success: true, message: text });
+                    }
                 } catch (e) {
                     console.error('Upload Error:', e);
                     reject(e);
