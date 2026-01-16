@@ -143,47 +143,35 @@ export const api = {
 
     // Picture helpers
     postToUrl: (url: string, params: any) => apiRequest(url, 'POST', params),
-    uploadPicture: (file: File, onProgress?: (percent: number) => void) => {
+    uploadPicture: async (file: File, onProgress?: (percent: number) => void) => {
         return new Promise<ApiResponse>((resolve, reject) => {
             const reader = new FileReader();
-            reader.onload = () => {
-                const base64String = (reader.result as string).split(',')[1];
-                const url = new URL(DOWNLOAD_API_URL);
-                url.searchParams.append('action', 'upload');
-                url.searchParams.append('filename', file.name);
-                url.searchParams.append('contentType', file.type || 'image/jpeg');
+            reader.onload = async () => {
+                try {
+                    const base64String = (reader.result as string).split(',')[1];
+                    const url = new URL(DOWNLOAD_API_URL);
+                    url.searchParams.append('action', 'upload');
+                    url.searchParams.append('filename', file.name);
+                    url.searchParams.append('contentType', file.type || 'image/jpeg');
 
-                const xhr = new XMLHttpRequest();
-                xhr.open('POST', url.toString(), true);
+                    // If progress is requested, we simulate it for fetch or accept it's 0/100
+                    if (onProgress) onProgress(10); // Start
 
-                // Using text/plain to avoid CORS preflight (OPTIONS request) 
-                // which Google Apps Script doesn't handle well
-                xhr.setRequestHeader('Content-Type', 'text/plain');
+                    const res = await fetch(url.toString(), {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'text/plain',
+                        },
+                        body: base64String
+                    });
 
-                if (onProgress) {
-                    xhr.upload.onprogress = (e) => {
-                        if (e.lengthComputable) {
-                            const percent = Math.round((e.loaded / e.total) * 100);
-                            onProgress(percent);
-                        }
-                    };
+                    if (onProgress) onProgress(100); // Complete
+                    const json = await res.json();
+                    resolve(json);
+                } catch (e) {
+                    console.error('Upload Error:', e);
+                    reject(e);
                 }
-
-                xhr.onload = () => {
-                    if (xhr.status >= 200 && xhr.status < 300) {
-                        try {
-                            const json = JSON.parse(xhr.responseText);
-                            resolve(json);
-                        } catch (e) {
-                            reject(new Error('Failed to parse response'));
-                        }
-                    } else {
-                        reject(new Error(`Upload failed with status ${xhr.status}`));
-                    }
-                };
-
-                xhr.onerror = () => reject(new Error('Network error'));
-                xhr.send(base64String);
             };
             reader.onerror = (error) => reject(error);
             reader.readAsDataURL(file);
