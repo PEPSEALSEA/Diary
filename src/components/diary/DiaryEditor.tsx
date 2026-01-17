@@ -26,6 +26,9 @@ import { CSS } from '@dnd-kit/utilities';
 
 import ImageViewer from '../ImageViewer';
 
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
 interface DiaryEditorProps {
     user: User;
     onEntryChange: () => void;
@@ -510,6 +513,8 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
     };
 
 
+    const [editorTab, setEditorTab] = useState<'write' | 'preview'>('write');
+
     return (
         <div className="card diary-editor-card" style={{ position: 'relative', padding: 0, overflow: 'hidden' }}>
             {(loading || (loadingEntries && allEntries.length === 0)) && <LoadingOverlay message={loading ? "Working..." : "Loading diary..."} />}
@@ -559,23 +564,42 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
                     </div>
                 </div>
 
-                <div className="entry-status code" style={{
-                    color: isDirty ? 'var(--accent-2)' : 'var(--ok)',
-                    fontSize: 10,
-                    fontWeight: 'bold',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6
-                }}>
-                    <div style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: '50%',
-                        background: 'currentColor',
-                        boxShadow: `0 0 8px currentColor`,
-                        animation: autoSaving ? 'pulse 1s infinite' : 'none'
-                    }}></div>
-                    {autoSaving ? 'Syncing...' : (isDirty ? 'Unsaved' : 'Saved')}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <div className="tab-switcher" style={{ display: 'flex', background: 'var(--input)', borderRadius: 8, padding: 2, border: '1px solid var(--border)' }}>
+                        <button
+                            className={editorTab === 'write' ? '' : 'ghost'}
+                            onClick={() => setEditorTab('write')}
+                            style={{ padding: '4px 12px', fontSize: 12, borderRadius: 6, height: 'auto' }}
+                        >
+                            Write
+                        </button>
+                        <button
+                            className={editorTab === 'preview' ? '' : 'ghost'}
+                            onClick={() => setEditorTab('preview')}
+                            style={{ padding: '4px 12px', fontSize: 12, borderRadius: 6, height: 'auto' }}
+                        >
+                            Preview
+                        </button>
+                    </div>
+
+                    <div className="entry-status code" style={{
+                        color: isDirty ? 'var(--accent-2)' : 'var(--ok)',
+                        fontSize: 10,
+                        fontWeight: 'bold',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6
+                    }}>
+                        <div style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: '50%',
+                            background: 'currentColor',
+                            boxShadow: `0 0 8px currentColor`,
+                            animation: autoSaving ? 'pulse 1s infinite' : 'none'
+                        }}></div>
+                        {autoSaving ? 'Syncing...' : (isDirty ? 'Unsaved' : 'Saved')}
+                    </div>
                 </div>
             </div>
 
@@ -594,26 +618,39 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
                         fontWeight: 700,
                         padding: '0 0 8px 0',
                         marginBottom: 16,
-                        transition: 'border-color 0.3s'
+                        transition: 'border-color 0.3s',
+                        width: '100%'
                     }}
                     className="title-input focus-border-bottom"
                 />
 
-                <textarea
-                    value={content}
-                    onChange={e => { setContent(e.target.value); setIsDirty(true); }}
-                    placeholder="Tell your story..."
-                    style={{
-                        background: 'transparent',
-                        border: 'none',
-                        borderRadius: 0,
-                        fontSize: 16,
-                        lineHeight: 1.6,
-                        minHeight: 350,
-                        padding: 0,
-                        resize: 'none'
-                    }}
-                />
+                {editorTab === 'write' ? (
+                    <textarea
+                        value={content}
+                        onChange={e => { setContent(e.target.value); setIsDirty(true); }}
+                        placeholder="Tell your story..."
+                        style={{
+                            background: 'transparent',
+                            border: 'none',
+                            borderRadius: 0,
+                            fontSize: 16,
+                            lineHeight: 1.6,
+                            minHeight: 350,
+                            padding: 0,
+                            resize: 'none'
+                        }}
+                    />
+                ) : (
+                    <div className="markdown-content" style={{ minHeight: 350 }}>
+                        {content.trim() ? (
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {content}
+                            </ReactMarkdown>
+                        ) : (
+                            <div className="helper" style={{ textAlign: 'center', padding: '40px 0' }}>Nothing to preview yet...</div>
+                        )}
+                    </div>
+                )}
 
                 <div className="spacer" style={{ height: 32 }}></div>
 
@@ -728,6 +765,88 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
                     .diary-editor-card textarea {
                         min-height: 250px;
                     }
+                }
+                .markdown-content {
+                    color: var(--text);
+                }
+                .markdown-content h1, .markdown-content h2, .markdown-content h3, .markdown-content h4 {
+                    margin-top: 24px;
+                    margin-bottom: 16px;
+                    font-weight: 600;
+                    line-height: 1.25;
+                }
+                .markdown-content h1 { font-size: 2em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+                .markdown-content h2 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+                .markdown-content h3 { font-size: 1.25em; }
+                .markdown-content h4 { font-size: 1em; }
+                .markdown-content p { margin-top: 0; margin-bottom: 16px; }
+                .markdown-content blockquote {
+                    padding: 0 1em;
+                    color: var(--muted);
+                    border-left: 0.25em solid var(--accent);
+                    margin: 0 0 16px 0;
+                }
+                .markdown-content code {
+                    padding: 0.2em 0.4em;
+                    margin: 0;
+                    font-size: 85%;
+                    background-color: rgba(255, 255, 255, 0.05);
+                    border-radius: 6px;
+                    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+                }
+                .markdown-content pre {
+                    padding: 16px;
+                    overflow: auto;
+                    font-size: 85%;
+                    line-height: 1.45;
+                    background-color: rgba(255, 255, 255, 0.03);
+                    border-radius: 6px;
+                    margin-bottom: 16px;
+                }
+                .markdown-content pre code {
+                    padding: 0;
+                    margin: 0;
+                    background-color: transparent;
+                    border: 0;
+                }
+                .markdown-content ul, .markdown-content ol {
+                    padding-left: 2em;
+                    margin-bottom: 16px;
+                }
+                .markdown-content table {
+                    border-spacing: 0;
+                    border-collapse: collapse;
+                    margin-bottom: 16px;
+                    width: 100%;
+                }
+                .markdown-content table th, .markdown-content table td {
+                    padding: 6px 13px;
+                    border: 1px solid var(--border);
+                }
+                .markdown-content table tr {
+                    background-color: transparent;
+                    border-top: 1px solid var(--border);
+                }
+                .markdown-content table tr:nth-child(2n) {
+                    background-color: rgba(255, 255, 255, 0.02);
+                }
+                .markdown-content img {
+                    max-width: 100%;
+                    box-sizing: content-box;
+                }
+                .markdown-content hr {
+                    height: 0.25em;
+                    padding: 0;
+                    margin: 24px 0;
+                    background-color: var(--border);
+                    border: 0;
+                }
+                .markdown-content :global(.task-list-item) {
+                    list-style-type: none;
+                }
+                .markdown-content :global(.task-list-item input) {
+                    width: auto;
+                    margin-right: 8px;
                 }
             `}</style>
         </div>

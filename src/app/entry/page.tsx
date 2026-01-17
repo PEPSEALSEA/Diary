@@ -8,6 +8,8 @@ import { useAuth } from '@/context/AuthContext';
 import Header from '@/components/Header';
 import LoadingOverlay from '@/components/LoadingOverlay';
 import ImageViewer from '@/components/ImageViewer';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 function EntryContent() {
     const params = useSearchParams();
@@ -94,8 +96,11 @@ function EntryContent() {
                                 <div className="badge">{normalizePrivacy(entry.privacy, entry.isPrivate)}</div>
                             </div>
                         </div>
-                        <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, fontSize: 16 }}>
-                            {entry.content}
+
+                        <div className="markdown-content" style={{ lineHeight: 1.6, fontSize: 16 }}>
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {entry.content}
+                            </ReactMarkdown>
                         </div>
 
                         {pictures.length > 0 && (
@@ -120,6 +125,92 @@ function EntryContent() {
                     <Link href={`/profile?u=${encodeURIComponent(username)}`} className="link">View more from {username}</Link>
                 </div>
             </div>
+
+            <style jsx global>{`
+                .markdown-content {
+                    color: var(--text);
+                }
+                .markdown-content h1, .markdown-content h2, .markdown-content h3, .markdown-content h4 {
+                    margin-top: 24px;
+                    margin-bottom: 16px;
+                    font-weight: 600;
+                    line-height: 1.25;
+                }
+                .markdown-content h1 { font-size: 2em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+                .markdown-content h2 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+                .markdown-content h3 { font-size: 1.25em; }
+                .markdown-content h4 { font-size: 1em; }
+                .markdown-content p { margin-top: 0; margin-bottom: 16px; }
+                .markdown-content blockquote {
+                    padding: 0 1em;
+                    color: var(--muted);
+                    border-left: 0.25em solid var(--accent);
+                    margin: 0 0 16px 0;
+                }
+                .markdown-content code {
+                    padding: 0.2em 0.4em;
+                    margin: 0;
+                    font-size: 85%;
+                    background-color: rgba(255, 255, 255, 0.05);
+                    border-radius: 6px;
+                    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+                }
+                .markdown-content pre {
+                    padding: 16px;
+                    overflow: auto;
+                    font-size: 85%;
+                    line-height: 1.45;
+                    background-color: rgba(255, 255, 255, 0.03);
+                    border-radius: 6px;
+                    margin-bottom: 16px;
+                }
+                .markdown-content pre code {
+                    padding: 0;
+                    margin: 0;
+                    background-color: transparent;
+                    border: 0;
+                }
+                .markdown-content ul, .markdown-content ol {
+                    padding-left: 2em;
+                    margin-bottom: 16px;
+                }
+                .markdown-content table {
+                    border-spacing: 0;
+                    border-collapse: collapse;
+                    margin-bottom: 16px;
+                    width: 100%;
+                }
+                .markdown-content table th, .markdown-content table td {
+                    padding: 6px 13px;
+                    border: 1px solid var(--border);
+                }
+                .markdown-content table tr {
+                    background-color: transparent;
+                    border-top: 1px solid var(--border);
+                }
+                .markdown-content table tr:nth-child(2n) {
+                    background-color: rgba(255, 255, 255, 0.02);
+                }
+                .markdown-content img {
+                    max-width: 100%;
+                    box-sizing: content-box;
+                }
+                .markdown-content hr {
+                    height: 0.25em;
+                    padding: 0;
+                    margin: 24px 0;
+                    background-color: var(--border);
+                    border: 0;
+                }
+                .markdown-content .task-list-item {
+                    list-style-type: none;
+                }
+                .markdown-content .task-list-item input {
+                    width: auto;
+                    margin-right: 8px;
+                }
+            `}</style>
+
             <div className="footer">Make By PEPSEALSEA ©2025</div>
         </div>
     );
