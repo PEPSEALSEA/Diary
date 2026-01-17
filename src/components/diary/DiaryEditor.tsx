@@ -25,6 +25,9 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 
 import ImageViewer from '../ImageViewer';
+import {
+    Bold, Italic, Strikethrough, Heading1, Heading2, List, ListOrdered, CheckSquare, Link as LinkIcon
+} from 'lucide-react';
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -128,7 +131,32 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
 
     const [loading, setLoading] = useState(false);
     const [isDirty, setIsDirty] = useState(false);
-    const [editMode, setEditMode] = useState(true); // Default to edit mode for simplicity or mimic old app
+    const [editMode, setEditMode] = useState(true);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    const insertMarkdown = (prefix: string, suffix: string = '') => {
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const text = textarea.value;
+        const selected = text.substring(start, end);
+        const before = text.substring(0, start);
+        const after = text.substring(end);
+
+        const newText = before + prefix + selected + suffix + after;
+        setContent(newText);
+        setIsDirty(true);
+
+        // Wait for state update then restore focus/selection
+        setTimeout(() => {
+            textarea.focus();
+            const newStart = start + prefix.length;
+            const newEnd = end + prefix.length;
+            textarea.setSelectionRange(newStart, newEnd);
+        }, 0);
+    };
 
     const sensors = useSensors(
         useSensor(PointerSensor, {
@@ -625,6 +653,7 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
                     value={title}
                     onChange={e => { setTitle(e.target.value); setIsDirty(true); }}
                     placeholder="Entry Title..."
+                    className="title-input focus-border-bottom"
                     style={{
                         background: 'transparent',
                         border: 'none',
@@ -637,11 +666,26 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
                         transition: 'border-color 0.3s',
                         width: '100%'
                     }}
-                    className="title-input focus-border-bottom"
                 />
+
+                <div className="markdown-toolbar" style={{ display: 'flex', gap: 4, marginBottom: 12, flexWrap: 'wrap', padding: '8px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                    <button type="button" className="ghost" onClick={() => insertMarkdown('**', '**')} title="Bold" style={{ padding: 6, width: 32, height: 32 }}><Bold size={16} /></button>
+                    <button type="button" className="ghost" onClick={() => insertMarkdown('*', '*')} title="Italic" style={{ padding: 6, width: 32, height: 32 }}><Italic size={16} /></button>
+                    <button type="button" className="ghost" onClick={() => insertMarkdown('~~', '~~')} title="Strikethrough" style={{ padding: 6, width: 32, height: 32 }}><Strikethrough size={16} /></button>
+                    <div style={{ width: 1, height: 20, background: 'var(--border)', alignSelf: 'center', margin: '0 4px' }}></div>
+                    <button type="button" className="ghost" onClick={() => insertMarkdown('# ', '')} title="H1" style={{ padding: 6, width: 32, height: 32 }}><Heading1 size={16} /></button>
+                    <button type="button" className="ghost" onClick={() => insertMarkdown('## ', '')} title="H2" style={{ padding: 6, width: 32, height: 32 }}><Heading2 size={16} /></button>
+                    <div style={{ width: 1, height: 20, background: 'var(--border)', alignSelf: 'center', margin: '0 4px' }}></div>
+                    <button type="button" className="ghost" onClick={() => insertMarkdown('* ', '')} title="Bullet List" style={{ padding: 6, width: 32, height: 32 }}><List size={16} /></button>
+                    <button type="button" className="ghost" onClick={() => insertMarkdown('1. ', '')} title="Numbered List" style={{ padding: 6, width: 32, height: 32 }}><ListOrdered size={16} /></button>
+                    <button type="button" className="ghost" onClick={() => insertMarkdown('- [ ] ', '')} title="Task List" style={{ padding: 6, width: 32, height: 32 }}><CheckSquare size={16} /></button>
+                    <div style={{ width: 1, height: 20, background: 'var(--border)', alignSelf: 'center', margin: '0 4px' }}></div>
+                    <button type="button" className="ghost" onClick={() => insertMarkdown('[', '](url)')} title="Link" style={{ padding: 6, width: 32, height: 32 }}><LinkIcon size={16} /></button>
+                </div>
 
                 {editorTab === 'write' ? (
                     <textarea
+                        ref={textareaRef}
                         value={content}
                         onChange={e => { setContent(e.target.value); setIsDirty(true); }}
                         placeholder="Tell your story..."
@@ -782,6 +826,17 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
                         min-height: 250px;
                     }
                 }
+                .markdown-toolbar button {
+                    color: var(--muted);
+                    transition: all 0.2s;
+                }
+                .markdown-toolbar button:hover {
+                    color: var(--accent);
+                    background: rgba(59, 130, 246, 0.1) !important;
+                }
+                .markdown-toolbar button:active {
+                    transform: scale(0.95);
+                }
                 .markdown-content {
                     color: var(--text);
                 }
@@ -856,9 +911,6 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
                     margin: 24px 0;
                     background-color: var(--border);
                     border: 0;
-                }
-                .markdown-content :global(.task-list-item) {
-                    list-style-type: none;
                 }
                 .markdown-content :global(.task-list-item input) {
                     width: auto;
