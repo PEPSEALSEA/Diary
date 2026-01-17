@@ -45,26 +45,49 @@ export default function RecentList({ user, refreshTrigger }: RecentListProps) {
                 </div>
             )}
 
-            <h3>Recent entries</h3>
-            <div className="pager">
-                <button className="ghost" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>◀</button>
+            <h3 style={{ fontSize: 16, margin: '0 0 16px 0' }}>Recent entries</h3>
+            <div className="pager" style={{ marginBottom: 16, justifyContent: 'space-between', fontSize: 12 }}>
+                <button className="ghost" disabled={page <= 1} onClick={() => setPage(p => p - 1)} style={{ padding: '4px 8px' }}>◀</button>
                 <span className="helper">Page {page} / {totalPages}</span>
-                <button className="ghost" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>▶</button>
+                <button className="ghost" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} style={{ padding: '4px 8px' }}>▶</button>
             </div>
 
-            <div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {displayEntries.length === 0 && !loading && <div className="helper">No entries.</div>}
                 {displayEntries.map(e => (
-                    <div key={e.entryId || e.date} style={{ marginBottom: 12 }}>
-                        <Link href={`/entry?u=${encodeURIComponent(user.username)}&d=${toDisplayDate(e.date)}`} target="_blank" className="link">
+                    <div key={e.entryId || e.date} className="recent-item" style={{
+                        borderBottom: '1px solid var(--border)',
+                        paddingBottom: 8,
+                        transition: 'transform 0.2s'
+                    }}>
+                        <Link
+                            href={`/entry?u=${encodeURIComponent(user.username)}&d=${toDisplayDate(e.date)}`}
+                            target="_blank"
+                            className="link truncate"
+                            style={{
+                                display: 'block',
+                                fontSize: 13,
+                                fontWeight: 600,
+                                marginBottom: 2
+                            }}
+                        >
                             {toDisplayDate(e.date)} — {e.title || 'Untitled'}
                         </Link>
-                        <div className="helper truncate">
-                            {String(e.content || '').slice(0, 100) || 'No content'}
+                        <div className="helper truncate" style={{ fontSize: 11, color: 'var(--muted)' }}>
+                            {String(e.content || '').slice(0, 60) || 'No content...'}
                         </div>
                     </div>
                 ))}
             </div>
+
+            <style jsx>{`
+                .recent-item:hover {
+                    transform: translateX(4px);
+                }
+                .recent-item:last-child {
+                    border-bottom: none;
+                }
+            `}</style>
         </div>
     );
 }

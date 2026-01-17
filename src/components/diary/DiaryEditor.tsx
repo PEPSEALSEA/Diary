@@ -511,7 +511,7 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
 
 
     return (
-        <div className="card" style={{ position: 'relative' }}>
+        <div className="card diary-editor-card" style={{ position: 'relative', padding: 0, overflow: 'hidden' }}>
             {(loading || (loadingEntries && allEntries.length === 0)) && <LoadingOverlay message={loading ? "Working..." : "Loading diary..."} />}
             <ImageViewer
                 isOpen={viewer.isOpen}
@@ -519,104 +519,217 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
                 initialIndex={viewer.index}
                 onClose={closeViewer}
             />
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
-                <div className="helper">Editor</div>
-                <div className="entry-status code" style={{ color: isDirty ? 'var(--accent-2)' : 'var(--muted)' }}>
-                    {autoSaving ? 'Auto-saving...' : (isDirty ? 'Unsaved changes' : 'Saved')}
+
+            {/* Header / Toolbar */}
+            <div style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid var(--border)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                background: 'rgba(255,255,255,0.02)',
+                flexWrap: 'wrap',
+                gap: 12
+            }}>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center', flex: '1 1 auto' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span className="helper" style={{ whiteSpace: 'nowrap' }}>Date:</span>
+                        <input
+                            type="date"
+                            value={date}
+                            onChange={e => setDate(e.target.value)}
+                            style={{ width: 'auto', padding: '6px 10px', fontSize: 13 }}
+                        />
+                    </div>
+                    <div style={{ width: 1, height: 20, background: 'var(--border)' }}></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '1 1 auto', maxWidth: 300 }}>
+                        <span className="helper" style={{ whiteSpace: 'nowrap' }}>Entry:</span>
+                        <select
+                            value={entryId || ''}
+                            onChange={handleEntrySelect}
+                            style={{ padding: '6px 10px', fontSize: 13 }}
+                        >
+                            <option value="">(New Entry)</option>
+                            {entriesForDate.map(e => (
+                                <option key={e.entryId} value={e.entryId}>
+                                    {e.title || '(Untitled)'} {normalizePrivacy(e.privacy, e.isPrivate) === 'private' ? '🔒' : ''}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+
+                <div className="entry-status code" style={{
+                    color: isDirty ? 'var(--accent-2)' : 'var(--ok)',
+                    fontSize: 10,
+                    fontWeight: 'bold',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                }}>
+                    <div style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        background: 'currentColor',
+                        boxShadow: `0 0 8px currentColor`,
+                        animation: autoSaving ? 'pulse 1s infinite' : 'none'
+                    }}></div>
+                    {autoSaving ? 'Syncing...' : (isDirty ? 'Unsaved' : 'Saved')}
                 </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                <div style={{ flex: 1 }}>
-                    <label>Date</label>
-                    <input type="date" value={date} onChange={e => setDate(e.target.value)} />
-                </div>
-                <div style={{ flex: 1 }}>
-                    <label>Select Entry</label>
-                    <select value={entryId || ''} onChange={handleEntrySelect}>
-                        <option value="">(New Entry)</option>
-                        {entriesForDate.map(e => (
-                            <option key={e.entryId} value={e.entryId}>
-                                {e.title || '(Untitled)'} {normalizePrivacy(e.privacy, e.isPrivate) === 'private' ? '🔒' : ''}
-                            </option>
+            {/* Main Content Area */}
+            <div style={{ padding: 24 }}>
+                <input
+                    value={title}
+                    onChange={e => { setTitle(e.target.value); setIsDirty(true); }}
+                    placeholder="Entry Title..."
+                    style={{
+                        background: 'transparent',
+                        border: 'none',
+                        borderBottom: '2px solid transparent',
+                        borderRadius: 0,
+                        fontSize: 28,
+                        fontWeight: 700,
+                        padding: '0 0 8px 0',
+                        marginBottom: 16,
+                        transition: 'border-color 0.3s'
+                    }}
+                    className="title-input focus-border-bottom"
+                />
+
+                <textarea
+                    value={content}
+                    onChange={e => { setContent(e.target.value); setIsDirty(true); }}
+                    placeholder="Tell your story..."
+                    style={{
+                        background: 'transparent',
+                        border: 'none',
+                        borderRadius: 0,
+                        fontSize: 16,
+                        lineHeight: 1.6,
+                        minHeight: 350,
+                        padding: 0,
+                        resize: 'none'
+                    }}
+                />
+
+                <div className="spacer" style={{ height: 32 }}></div>
+
+                {/* Pictures Section */}
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 24 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                        <h4 style={{ margin: 0, fontSize: 14, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1 }}>Pictures</h4>
+                        <span className="helper">{pictures.length} uploaded</span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                        <DndContext
+                            sensors={sensors}
+                            collisionDetection={closestCenter}
+                            onDragEnd={handleDragEnd}
+                        >
+                            <SortableContext
+                                items={pictures.map(p => p.pictureId)}
+                                strategy={rectSortingStrategy}
+                            >
+                                {pictures.map((p, idx) => (
+                                    <SortablePicture
+                                        key={p.pictureId}
+                                        picture={p}
+                                        onDelete={handleDeletePicture}
+                                        onView={() => openViewer(pictures.map(x => x.url), idx)}
+                                    />
+                                ))}
+                            </SortableContext>
+                        </DndContext>
+
+                        {uploadQueue.map(item => (
+                            <UploadItem key={item.id} item={item} />
                         ))}
-                    </select>
+
+                        {!uploading && (
+                            <label className="card add-picture-btn" style={{
+                                cursor: 'pointer',
+                                width: 100,
+                                height: 100,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                border: '2px dashed var(--border)',
+                                margin: 0,
+                                transition: 'all 0.2s',
+                                background: 'rgba(255,255,255,0.02)'
+                            }}>
+                                <span style={{ fontSize: 24, color: 'var(--muted)' }}>+</span>
+                                <span style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>Add Photo</span>
+                                <input type="file" multiple accept="image/*" onChange={handleFileUpload} style={{ display: 'none' }} disabled={uploading} />
+                            </label>
+                        )}
+                    </div>
+                </div>
+
+                <div className="spacer" style={{ height: 32 }}></div>
+
+                {/* Footer Actions */}
+                <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    borderTop: '1px solid var(--border)',
+                    paddingTop: 24,
+                    flexWrap: 'wrap',
+                    gap: 16
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <label style={{ margin: 0 }}>Privacy Level</label>
+                            <select
+                                value={privacy}
+                                onChange={e => { setPrivacy(e.target.value as any); setIsDirty(true); }}
+                                style={{ width: 'auto', padding: '8px 12px', fontSize: 14 }}
+                            >
+                                <option value="public">🌍 Public</option>
+                                <option value="friend">👥 Friends</option>
+                                <option value="private">🔒 Private</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 12 }}>
+                        {entryId && (
+                            <button className="danger ghost" onClick={handleDelete} disabled={loading} style={{ padding: '10px 20px' }}>
+                                {loading ? <div className="spinner" style={{ width: 14, height: 14, margin: 0 }}></div> : 'Delete Entry'}
+                            </button>
+                        )}
+                        <button onClick={handleSave} disabled={loading} style={{ padding: '10px 32px', minWidth: 120, background: isDirty ? 'var(--accent)' : 'var(--border)', color: isDirty ? 'white' : 'var(--muted)' }}>
+                            {loading ? <div className="spinner" style={{ width: 14, height: 14, margin: 0 }}></div> : (entryId ? 'Update' : 'Save')}
+                        </button>
+                    </div>
                 </div>
             </div>
-            <div className="spacer"></div>
 
-            <label>Title</label>
-            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Title" />
-            <div className="spacer"></div>
-
-            <label>Content</label>
-            <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="Write your day..." />
-            <div className="spacer"></div>
-
-            <label>Privacy</label>
-            <select value={privacy} onChange={e => setPrivacy(e.target.value as any)}>
-                <option value="public">Public (anyone)</option>
-                <option value="friend">Friend (approved users)</option>
-                <option value="private">Private (only you)</option>
-            </select>
-            <div className="spacer"></div>
-
-            <label>Pictures</label>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-                <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragEnd={handleDragEnd}
-                >
-                    <SortableContext
-                        items={pictures.map(p => p.pictureId)}
-                        strategy={rectSortingStrategy}
-                    >
-                        {pictures.map((p, idx) => (
-                            <SortablePicture
-                                key={p.pictureId}
-                                picture={p}
-                                onDelete={handleDeletePicture}
-                                onView={() => openViewer(pictures.map(x => x.url), idx)}
-                            />
-                        ))}
-                    </SortableContext>
-                </DndContext>
-
-                {uploadQueue.map(item => (
-                    <UploadItem key={item.id} item={item} />
-                ))}
-
-                {!uploading && (
-                    <label className="card" style={{
-                        cursor: 'pointer',
-                        width: 100,
-                        height: 100,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        border: '2px dashed var(--border)',
-                        margin: 0,
-                        transition: 'border-color 0.2s'
-                    }}>
-                        <span style={{ fontSize: 24, color: 'var(--muted)' }}>+</span>
-                        <input type="file" multiple accept="image/*" onChange={handleFileUpload} style={{ display: 'none' }} disabled={uploading} />
-                    </label>
-                )}
-            </div>
-            <div className="spacer"></div>
-
-
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button onClick={handleSave} disabled={loading}>
-                    {loading ? <div className="spinner" style={{ width: 14, height: 14, margin: 0 }}></div> : (entryId ? 'Update' : 'Save')}
-                </button>
-                {entryId && (
-                    <button className="danger" onClick={handleDelete} disabled={loading}>
-                        {loading ? <div className="spinner" style={{ width: 14, height: 14, margin: 0 }}></div> : 'Delete'}
-                    </button>
-                )}
-            </div>
+            <style jsx global>{`
+                .title-input:focus {
+                    border-bottom-color: var(--accent) !important;
+                    box-shadow: none !important;
+                }
+                .diary-editor-card .card:hover {
+                    border-color: var(--accent-2);
+                    background: rgba(255,255,255,0.05);
+                }
+                .add-picture-btn:hover {
+                    border-color: var(--accent) !important;
+                    background: rgba(59, 130, 246, 0.05) !important;
+                }
+                @media (max-width: 600px) {
+                    .diary-editor-card textarea {
+                        min-height: 250px;
+                    }
+                }
+            `}</style>
         </div>
     );
 }
