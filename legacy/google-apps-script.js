@@ -978,6 +978,17 @@ function getPublicDiaryEntries(username, date, month, year, limit, offset, maxCo
       picMap[k] = picMap[k].map(item => item.url);
     });
 
+    // Pre-fetch viewer friends for isFriend check
+    const viewerFriendsSet = new Set();
+    if (viewerUserId) {
+      try {
+        const vFriendsRes = listFriends(viewerUserId);
+        if (vFriendsRes.success && vFriendsRes.friends) {
+          vFriendsRes.friends.forEach(f => viewerFriendsSet.add(f.friendUserId));
+        }
+      } catch (e) { }
+    }
+
     const publicEntries = [];
     const reqUser = username ? String(username || '').trim().toLowerCase() : '';
     const reqMonth = month || '';
@@ -1015,7 +1026,9 @@ function getPublicDiaryEntries(username, date, month, year, limit, offset, maxCo
       }
       publicEntries.push({
         entryId: data[i][0],
+        userId: ownerId,
         username: data[i][2],
+        isFriend: viewerFriendsSet.has(ownerId),
         date: rowDate,
         title: data[i][4],
         content: content,

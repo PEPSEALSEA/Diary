@@ -7,7 +7,8 @@ import LoadingOverlay from './LoadingOverlay';
 import { useCachedQuery } from '@/hooks/useCachedQuery';
 import ImageViewer from './ImageViewer';
 import HighlightText from './HighlightText';
-import { Search } from 'lucide-react';
+import { Search, Star } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 
 export default function PublicFeed() {
     const [searchQuery, setSearchQuery] = React.useState('');
@@ -18,10 +19,13 @@ export default function PublicFeed() {
         return () => clearTimeout(timer);
     }, [searchQuery]);
 
-    const { data, loading, validating } = useCachedQuery<ApiResponse>('public_feed', {
+    const { user } = useAuth();
+
+    const { data, loading, validating } = useCachedQuery<ApiResponse>(user ? `public_feed_${user.id}` : 'public_feed_guest', {
         action: 'getPublicDiaryEntries',
         limit: 50,
-        q: debouncedSearch
+        q: debouncedSearch,
+        viewerUserId: user?.id || ''
     });
 
     const entries = data?.entries || [];
@@ -93,7 +97,8 @@ export default function PublicFeed() {
                             <HighlightText text={toDisplayDate(e.date)} query={debouncedSearch} />
                         </span>
                     </div>
-                    <Link href={`/entry?u=${encodeURIComponent(e.username || '')}&d=${toDisplayDate(e.date)}`} className="link" style={{ fontSize: 18, fontWeight: 600, display: 'block', marginBottom: 6 }}>
+                    <Link href={`/entry?u=${encodeURIComponent(e.username || '')}&d=${toDisplayDate(e.date)}`} className="link" style={{ fontSize: 18, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                        {e.isFriend && <Star size={16} fill="#ffab00" stroke="#ffab00" style={{ flexShrink: 0, filter: 'drop-shadow(0 0 4px rgba(255,171,0,0.4))' }} />}
                         <HighlightText text={e.title || 'Untitled'} query={debouncedSearch} />
                     </Link>
                     <div style={{ lineHeight: 1.5 }}>

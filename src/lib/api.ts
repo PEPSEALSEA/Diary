@@ -36,6 +36,7 @@ export interface ProfileData {
 
 export interface DiaryEntry {
     entryId?: string;
+    userId?: string;
     date: string;
     title: string;
     content: string;
@@ -44,6 +45,7 @@ export interface DiaryEntry {
     created?: string;
     lastModified?: string;
     username?: string;
+    isFriend?: boolean;
     pictures?: any[];
 }
 

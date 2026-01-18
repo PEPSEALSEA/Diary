@@ -10,7 +10,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import HighlightText from '@/components/HighlightText';
 import { api, FriendRequest, ApiResponse, toDisplayDate, DiaryEntry } from '@/lib/api';
-import { Users, BookOpen, Clock, Calendar, ChevronDown, Check, X, UserPlus, MessageSquare, Search } from 'lucide-react';
+import { Users, BookOpen, Clock, Calendar, ChevronDown, Check, X, UserPlus, MessageSquare, Search, Star } from 'lucide-react';
 
 const ProfileContent = () => {
     const params = useSearchParams();
@@ -289,9 +289,19 @@ const ProfileContent = () => {
                             </button>
                         )}
                         {isFriend && !isSelf && (
-                            <button className="button ghost" disabled>
-                                <Check size={16} style={{ marginRight: 6 }} /> Friends
-                            </button>
+                            <div className="badge flex items-center gap-1.5" style={{
+                                background: 'rgba(255,171,0,0.1)',
+                                border: '1px solid rgba(255,171,0,0.3)',
+                                color: '#ffab00',
+                                padding: '8px 16px',
+                                borderRadius: 8,
+                                fontWeight: 600,
+                                userSelect: 'none',
+                                boxShadow: '0 0 10px rgba(255,171,0,0.1)'
+                            }}>
+                                <Star size={16} fill="#ffab00" stroke="#ffab00" />
+                                Friends
+                            </div>
                         )}
                         <button className="button ghost" onClick={() => setShowStats(true)}>
                             Level {profile.level}
@@ -411,7 +421,8 @@ const ProfileContent = () => {
                                 </div>
 
                                 <div style={{ padding: 24 }}>
-                                    <Link href={`/entry?u=${encodeURIComponent(username)}&d=${toDisplayDate(entry.date)}`} className="link" style={{ fontSize: 20, fontWeight: 700, display: 'block', marginBottom: 12 }}>
+                                    <Link href={`/entry?u=${encodeURIComponent(username)}&d=${toDisplayDate(entry.date)}`} className="link" style={{ fontSize: 20, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                                        {isFriend && <Star size={18} fill="#ffab00" stroke="#ffab00" style={{ flexShrink: 0, filter: 'drop-shadow(0 0 4px rgba(255,171,0,0.4))' }} />}
                                         <HighlightText text={entry.title || 'Untitled'} query={debouncedSearch} />
                                     </Link>
                                     <div style={{ lineHeight: 1.6, fontSize: 15, color: '#ccc', marginBottom: 16 }}>

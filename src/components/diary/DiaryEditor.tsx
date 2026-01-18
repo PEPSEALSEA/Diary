@@ -385,7 +385,7 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
 
     // Auto-save logic
     useEffect(() => {
-        if (!isDirty || loading) return;
+        if (!isDirty || loading || !entryId) return;
 
         const timer = setTimeout(() => {
             handleAutoSave();
@@ -802,7 +802,7 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
                             </button>
                         )}
                         <button onClick={handleSave} disabled={loading} style={{ padding: '10px 32px', minWidth: 120, background: isDirty ? 'var(--accent)' : 'var(--border)', color: isDirty ? 'white' : 'var(--muted)' }}>
-                            {loading ? <div className="spinner" style={{ width: 14, height: 14, margin: 0 }}></div> : (entryId ? 'Update' : 'Save')}
+                            {loading ? <div className="spinner" style={{ width: 14, height: 14, margin: 0 }}></div> : (entryId ? 'Update' : 'Create')}
                         </button>
                     </div>
                 </div>
