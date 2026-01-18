@@ -7,7 +7,7 @@ import LoadingOverlay from './LoadingOverlay';
 import { useCachedQuery } from '@/hooks/useCachedQuery';
 import ImageViewer from './ImageViewer';
 import HighlightText from './HighlightText';
-import { Search, Star } from 'lucide-react';
+import { Search, Star, Lock } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
 export default function PublicFeed() {
@@ -99,6 +99,7 @@ export default function PublicFeed() {
                     </div>
                     <Link href={`/entry?u=${encodeURIComponent(e.username || '')}&d=${toDisplayDate(e.date)}`} className="link" style={{ fontSize: 18, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
                         {e.isFriend && <Star size={16} fill="#ffab00" stroke="#ffab00" style={{ flexShrink: 0, filter: 'drop-shadow(0 0 4px rgba(255,171,0,0.4))' }} />}
+                        {(e.privacy === 'private' || e.privacy === 'friend') && <Lock size={14} style={{ flexShrink: 0, opacity: 0.8, color: '#ff4d4d' }} />}
                         <HighlightText text={e.title || 'Untitled'} query={debouncedSearch} />
                     </Link>
                     <div style={{ lineHeight: 1.5 }}>

@@ -10,7 +10,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import HighlightText from '@/components/HighlightText';
 import { api, FriendRequest, ApiResponse, toDisplayDate, DiaryEntry } from '@/lib/api';
-import { Users, BookOpen, Clock, Calendar, ChevronDown, Check, X, UserPlus, MessageSquare, Search, Star } from 'lucide-react';
+import { Users, BookOpen, Clock, Calendar, ChevronDown, Check, X, UserPlus, MessageSquare, Search, Star, Lock } from 'lucide-react';
 
 const ProfileContent = () => {
     const params = useSearchParams();
@@ -422,7 +422,8 @@ const ProfileContent = () => {
 
                                 <div style={{ padding: 24 }}>
                                     <Link href={`/entry?u=${encodeURIComponent(username)}&d=${toDisplayDate(entry.date)}`} className="link" style={{ fontSize: 20, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                                        {isFriend && <Star size={18} fill="#ffab00" stroke="#ffab00" style={{ flexShrink: 0, filter: 'drop-shadow(0 0 4px rgba(255,171,0,0.4))' }} />}
+                                        {entry.isFriend && <Star size={18} fill="#ffab00" stroke="#ffab00" style={{ flexShrink: 0, filter: 'drop-shadow(0 0 4px rgba(255,171,0,0.4))' }} />}
+                                        {(entry.privacy === 'private' || entry.privacy === 'friend') && <Lock size={16} style={{ flexShrink: 0, opacity: 0.8, color: '#ff4d4d' }} />}
                                         <HighlightText text={entry.title || 'Untitled'} query={debouncedSearch} />
                                     </Link>
                                     <div style={{ lineHeight: 1.6, fontSize: 15, color: '#ccc', marginBottom: 16 }}>
