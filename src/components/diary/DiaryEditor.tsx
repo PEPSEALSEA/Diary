@@ -850,7 +850,7 @@ export default function DiaryEditor({ user, onEntryChange, initialDate, refreshT
                 .markdown-content h2 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
                 .markdown-content h3 { font-size: 1.25em; }
                 .markdown-content h4 { font-size: 1em; }
-                .markdown-content p { margin-top: 0; margin-bottom: 16px; }
+                .markdown-content p, .markdown-content li { margin-top: 0; margin-bottom: 16px; white-space: pre-wrap; }
                 .markdown-content blockquote {
                     padding: 0 1em;
                     color: var(--muted);

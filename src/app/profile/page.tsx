@@ -426,7 +426,7 @@ const ProfileContent = () => {
                                         {(entry.privacy === 'private' || entry.privacy === 'friend') && <Lock size={16} style={{ flexShrink: 0, opacity: 0.8, color: '#ff4d4d' }} />}
                                         <HighlightText text={entry.title || 'Untitled'} query={debouncedSearch} />
                                     </Link>
-                                    <div style={{ lineHeight: 1.6, fontSize: 15, color: '#ccc', marginBottom: 16 }}>
+                                    <div style={{ lineHeight: 1.6, fontSize: 15, color: '#ccc', marginBottom: 16, whiteSpace: 'pre-wrap' }}>
                                         <HighlightText
                                             text={entry.content.length > 300 ? entry.content.slice(0, 300) + '...' : entry.content}
                                             query={debouncedSearch}

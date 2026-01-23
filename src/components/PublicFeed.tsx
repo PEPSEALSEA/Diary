@@ -102,7 +102,7 @@ export default function PublicFeed() {
                         {(e.privacy === 'private' || e.privacy === 'friend') && <Lock size={14} style={{ flexShrink: 0, opacity: 0.8, color: '#ff4d4d' }} />}
                         <HighlightText text={e.title || 'Untitled'} query={debouncedSearch} />
                     </Link>
-                    <div style={{ lineHeight: 1.5 }}>
+                    <div style={{ lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
                         {e.pictures && e.pictures.length > 0 && (
                             <div
                                 className="card"
